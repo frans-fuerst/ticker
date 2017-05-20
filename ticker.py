@@ -3,11 +3,16 @@
 import urllib
 import json
 import sys
+import networkx as nx
+import numpy as np
+import matplotlib.pyplot as plt
+import pylab
 from pprint import pprint
 from datetime import datetime
 from urllib.request import urlopen
 
 URL = 'https://poloniex.com/public?command=returnTicker'
+BASE = {'BTC', 'ETH', 'XMR', 'USDT'}
 
 
 def get_ticker() -> str:
@@ -15,38 +20,44 @@ def get_ticker() -> str:
     open('{:%Y.%m.%d-%H.%M.%S}.json'.format(datetime.now()), 'w').write(json_data)
     return json_data
 
+def magic(graph):
+    pass
 
 def main():
 
-    data = {}
-    targets = set()
+    graph = nx.DiGraph()
+
     in_data = json.loads(open(sys.argv[1]).read() if len(sys.argv) > 1 else 
                          get_ticker())
 
     for d, detail in in_data.items():
-        c1, c2 = d.split('_')
-#        print(c1, c2)
-        targets.add(c2)
-#        print(c1, c2, detail.keys())
-        if c1 not in data:
-            data[c1] = {}
-        data[c1][c2] = detail
+        graph.add_edge(*d.split('_'), detail)
 
-    pprint(in_data['BTC_XEM'])
+    graph.remove_nodes_from(
+        (n for n in graph.nodes() 
+            if len(graph.in_edges(n)) < 2 and n not in BASE))
 
-    print(data.keys())
-    for c1, detail in data.items():
-        print(c1, list(detail.keys()))
+    magic(graph)
 
-    if not set(data.keys()) == {'BTC', 'ETH', 'XMR', 'USDT'}:
-        print(data.keys())
+    pos = nx.spring_layout(graph, k=1.15, iterations=50)
+    pos.update({'XMR':  [0.2, 0.5],
+                'BTC':  [0.4, 0.5],
+                'ETH':  [0.6, 0.5],
+                'USDT': [0.8, 0.5]})
 
-    print(targets)
-    print(len(targets))
+    nx.draw_networkx_edge_labels(graph, pos, 
+        edge_labels=dict([((u, v), d['last']) for u, v, d in graph.edges(data=True)])
+    )
+    nx.draw(graph, pos, 
+        # edge_color=edge_colors, 
+        node_color=[{'BTC': 'g',
+                     'USDT':'r',
+                     'ETH': 'c',
+                     'XMR': 'y'}.get(n, 'w') for n in graph.nodes()], 
+        node_size=1500)
+    nx.draw_networkx_labels(graph, pos, font_size=12)
+    pylab.show()
 
-    print(len(data['BTC']))
-    for e, detail in data['BTC'].items():
-        print(e, detail['last'])
 
 if __name__ == '__main__':
     main()
