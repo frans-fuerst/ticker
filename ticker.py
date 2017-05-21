@@ -28,8 +28,8 @@ def get_factor(graph, path):
             return 1.0 / float(graph.get_edge_data(c2, c1)['last'])
         else:
             raise ValueError('%r %r' % (c1, c2))
-    return reduce(get_transition_factor, path, 1)
-#zip(*[iter(path)]*2)
+    return reduce(mul, map(get_transition_factor, path, path[1:]))
+
 
 def magic(graph):
     for p in graph.nodes():
@@ -41,11 +41,13 @@ def magic(graph):
 
         for c1 in cs:
             for c2 in cs:
-                if not c1 == c2:
-                    print('\t', c1, c2)
-            #print(get_factor(graph, c, p) * get_factor(graph, p, c))
-
-    return
+                if c1 == c2: continue
+                print('\t', c1, c2)
+                try:
+                    print('\t %r->%r->%r, %.9f' % (
+                        c1, c2, p, get_factor(graph, [c1, c2, p])))
+                except ValueError:
+                    pass
 
 
 def main():
