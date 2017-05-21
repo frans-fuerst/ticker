@@ -36,16 +36,16 @@ def magic(graph):
         if p in BASE: continue
         print(p)
         cs = [c for c, _ in graph.in_edges(p)]
-        for c in cs:
-            print('\t %r->%r, %.9f' % (c, p, get_factor(graph, [c, p])))
-
         for c1 in cs:
+            direct = get_factor(graph, [c1, p])
+            print('\t %r->%r, %.9f' % (c1, p, direct))
             for c2 in cs:
                 if c1 == c2: continue
-                print('\t', c1, c2)
                 try:
-                    print('\t %r->%r->%r, %.9f' % (
-                        c1, c2, p, get_factor(graph, [c1, c2, p])))
+                    indirect = get_factor(graph, [c1, c2, p])
+                    factor  = (1 - indirect / direct)
+                    print('\t %r->%r->%r, %.9f %.2f%%' % (
+                        c1, c2, p, indirect, 100 * factor))
                 except ValueError:
                     pass
 
