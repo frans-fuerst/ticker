@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 
-import urllib
 import json
 import sys
 import networkx as nx
-import numpy as np
-import matplotlib.pyplot as plt
 import pylab
 from pprint import pprint
 from datetime import datetime
 from urllib.request import urlopen
+from operator import mul
+from functools import reduce
 
 URL = 'https://poloniex.com/public?command=returnTicker'
 BASE = {'BTC', 'ETH', 'XMR', 'USDT'}
@@ -21,29 +20,46 @@ def get_ticker() -> str:
     return json_data
 
 
+def get_factor(graph, path):
+    def get_transition_factor(c1, c2):
+        if graph.has_edge(c1, c2):
+            return float(graph.get_edge_data(c1, c2)['last'])
+        elif graph.has_edge(c2, c1):
+            return 1.0 / float(graph.get_edge_data(c2, c1)['last'])
+        else:
+            raise ValueError('%r %r' % (c1, c2))
+    return reduce(get_transition_factor, path, 1)
+#zip(*[iter(path)]*2)
+
 def magic(graph):
-    for n in graph.nodes():
-        if n in BASE:
-            continue
-        print(n)
-        for c1, c2, d in graph.in_edges(n, data=True):
-            print('\t', c1, d['last'])
-        
+    for p in graph.nodes():
+        if p in BASE: continue
+        print(p)
+        cs = [c for c, _ in graph.in_edges(p)]
+        for c in cs:
+            print('\t %r->%r, %.9f' % (c, p, get_factor(graph, [c, p])))
+
+        for c1 in cs:
+            for c2 in cs:
+                if not c1 == c2:
+                    print('\t', c1, c2)
+            #print(get_factor(graph, c, p) * get_factor(graph, p, c))
+
+    return
+
 
 def main():
 
     graph = nx.DiGraph()
 
-    in_data = json.loads(open(sys.argv[1]).read() if len(sys.argv) > 1 else 
+    in_data = json.loads(open(sys.argv[1]).read() if len(sys.argv) > 1 else
                          get_ticker())
 
     graph.add_edges_from((*d.split('_'), in_data[d]) for d in sorted(in_data))
 
     graph.remove_nodes_from(
-        (n for n in graph.nodes() 
+        (n for n in graph.nodes()
             if len(graph.in_edges(n)) < 2 and n not in BASE))
-
-    magic(graph)
 
     positions = nx.spring_layout(graph, k=1.15, iterations=50)
     positions.update({'XMR':  [0.2, 0.5],
@@ -51,17 +67,20 @@ def main():
                       'ETH':  [0.6, 0.5],
                       'USDT': [0.8, 0.5]})
 
-    nx.draw_networkx_edge_labels(graph, positions, 
-        edge_labels=dict([((u, v), d['last']) 
+    nx.draw_networkx_edge_labels(graph, positions,
+        edge_labels=dict([((u, v), d['last'])
                             for u, v, d in graph.edges(data=True)]))
-    nx.draw(graph, positions, 
-        #edge_color={}, 
+    nx.draw(graph, positions,
+        #edge_color={},
         node_color=[{'BTC': 'g',
                      'USDT':'r',
                      'ETH': 'c',
-                     'XMR': 'y'}.get(n, 'w') for n in graph.nodes()], 
+                     'XMR': 'y'}.get(n, 'w') for n in graph.nodes()],
         node_size=1500)
     nx.draw_networkx_labels(graph, positions, font_size=12)
+
+    magic(graph)
+
     pylab.show()
 
 
