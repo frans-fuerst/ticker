@@ -32,22 +32,25 @@ def get_factor(graph, path):
 
 
 def magic(graph):
-    for p in graph.nodes():
+    result = {}
+    for p in sorted(graph.nodes()):
         if p in BASE: continue
-        print(p)
+        result[p] = {}
         cs = [c for c, _ in graph.in_edges(p)]
-        for c1 in cs:
-            direct = get_factor(graph, [c1, p])
-            print('\t %r->%r, %.9f' % (c1, p, direct))
-            for c2 in cs:
+        for c1 in sorted(cs):
+            path = (c1, p)
+            direct = get_factor(graph, path)
+            result[p][path] = (direct, 0.0)
+            for c2 in sorted(cs):
                 if c1 == c2: continue
                 try:
-                    indirect = get_factor(graph, [c1, c2, p])
-                    factor  = (1 - indirect / direct)
-                    print('\t %r->%r->%r, %.9f %.2f%%' % (
-                        c1, c2, p, indirect, 100 * factor))
+                    path = (c1, c2, p)
+                    indirect = get_factor(graph, path)
+                    factor = (1 - indirect / direct)
+                    result[p][path] =  (indirect, 100 * factor)
                 except ValueError:
                     pass
+    return result
 
 
 def main():
@@ -81,9 +84,10 @@ def main():
         node_size=1500)
     nx.draw_networkx_labels(graph, positions, font_size=12)
 
-    magic(graph)
+    pprint(magic(graph))
 
-    pylab.show()
+    if '-n' not in sys.argv:
+        pylab.show()
 
 
 if __name__ == '__main__':
