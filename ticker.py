@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 
+import os
 import json
 import sys
 import networkx as nx
 import pylab
+import time
+import argparse
 from pprint import pprint
 from datetime import datetime
 from urllib.request import urlopen
@@ -12,6 +15,7 @@ from functools import reduce
 
 URL = 'https://poloniex.com/public?command=returnTicker'
 BASE = {'BTC', 'ETH', 'XMR', 'USDT'}
+TIMESTAMP_FORMAT = '%Y.%m.%d-%H.%M.%S.json'
 
 
 def get_ticker() -> str:
@@ -53,11 +57,11 @@ def magic(graph):
     return result
 
 
-def main():
+def get_ticker(source: str) -> dict:
 
     graph = nx.DiGraph()
 
-    in_data = json.loads(open(sys.argv[1]).read() if len(sys.argv) > 1 else
+    in_data = json.loads(open(source).read() if source else
                          get_ticker())
 
     graph.add_edges_from((*d.split('_'), in_data[d]) for d in sorted(in_data))
@@ -84,10 +88,30 @@ def main():
         node_size=1500)
     nx.draw_networkx_labels(graph, positions, font_size=12)
 
-    pprint(magic(graph))
+    return magic(graph)
 
-    if '-n' not in sys.argv:
-        pylab.show()
+
+def get_args() -> dict:
+    parser = argparse.ArgumentParser(description='ticker')
+
+    parser.add_argument("-v", "--verbose", action='store_true')
+    parser.add_argument("--no-graph", '-n', action='store_true')
+    parser.add_argument('source')
+    return parser.parse_args()
+
+
+def main():
+    args = get_args()
+    if os.path.isdir(args.source):
+        
+        for f in os.listdir():
+            if not '.json' in f: continue
+            pprint(get_ticker(f))
+            print(time.strptime(f, TIMESTAMP_FORMAT))
+    elif os.path.isfile(args.source):
+        pprint(get_ticker(args.source))
+        if not args.no_graph:
+            pylab.show()
 
 
 if __name__ == '__main__':
