@@ -75,7 +75,7 @@ def get_price(ticker, currency, coin):
 def get_EUR():
     def get_bla():
         return json.loads(urlopen('http://api.fixer.io/latest').read().decode())
-    return float(get_bla()['rates']['USD'])
+    return 1.0 / float(get_bla()['rates']['USD'])
 
 
 def main():
