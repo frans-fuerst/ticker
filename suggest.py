@@ -30,11 +30,10 @@ class Api:
             self._secret,
             msg=post_data,
             digestmod=hashlib.sha512).hexdigest()
-        r = Request(
+        ret = urlopen(Request(
             'https://poloniex.com/tradingApi',
             data=post_data,
-            headers={'Sign': sign, 'Key': self._key})
-        ret = urlopen(r).read()
+            headers={'Sign': sign, 'Key': self._key})).read()
         return json.loads(ret.decode())
 
     def _run_public_command(self, command: str, req=None) -> str:
@@ -73,19 +72,31 @@ def get_price(ticker, currency, coin):
     return 1.0 if currency == coin else ticker['%s_%s' % (currency, coin)]['last']
 
 
+def get_EUR():
+    def get_bla():
+        return json.loads(urlopen('http://api.fixer.io/latest').read().decode())
+    return float(get_bla()['rates']['USD'])
+
+
 def main():
     api = Api(**literal_eval(open('k').read()))
-
+    print('get balances..')
     b = api.get_balances()
+    print('get ticker..')
     t = api.get_ticker()
+    print('get rates..')
+    eur_price = get_EUR()
+
     xbt_price = get_price(t, 'USDT', 'BTC')
-    cash = 0.0
+
+    cash_usd = 0.0
     for c, v in sorted(b.items()):
         p = get_price(t, 'BTC', c)
-        tot = p * v * xbt_price
-        cash += tot
-        print('%r: %.5f %.5f $%.2f' % (c, v, p, tot))
-    print('$%.2f' % cash)
+        tot_usd = p * v * xbt_price
+        cash_usd += tot_usd
+        print('%r: %.5f %.5f EUR %.2f' % (c, v, p, tot_usd * eur_price))
+
+    print('USD %.2f / EUR %.2f' % (cash_usd, cash_usd * eur_price))
 
     #pprint(get_trade_history(api, 'USDT_BTC'))
     # pprint(t)
