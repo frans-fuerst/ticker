@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 
 import json
-from urllib.request import urlopen, Request
 import urllib
-import urllib3
+from urllib.request import urlopen, Request
 from datetime import datetime
 from pprint import pprint
 from ast import literal_eval
@@ -41,6 +40,7 @@ class Api:
     def __init__(self, key, secret):
         self._key = key.encode()
         self._secret = secret.encode()
+        self._markets = self._get_markets()
 
     def _run_private_command(self, command, req=None):
         req = req if req else {}
@@ -65,17 +65,23 @@ class Api:
         ret = urlopen(url + post_data).read()
         return json.loads(ret.decode())
 
-    def get_trade_history(self, currency, coin, duration) -> dict:
-        #https://poloniex.com/public?command=returnTradeHistory&currencyPair=BTC_NXT&start=1410158341&end=1410499372
-        if currency == coin:
-            return []
+    def _get_trade_history(self, currency_pair, duration=None) -> dict:
+        req = {'currencyPair': currency_pair}
+        if duration:
+            req.update({'start': '%d' % (time.time() - duration),
+                        'end': '9999999999'})
         return [translate_trade(t)
                 for t in self._run_public_command(
-                    'returnTradeHistory',
-                    {'currencyPair': currency + '_' + coin,
-                     'start': '%d' % (time.time() - duration),
-                     'end': '9999999999',
-                     })]
+                    'returnTradeHistory', req)]
+
+    def get_trade_history(self, primary, coin, duration) -> dict:
+        if primary == coin:
+            return []
+        return self._get_trade_history(primary + '_' + coin, duration)
+
+    def get_current_rate(self, market):
+        total, amount, minr, maxr = sum_trades(self._get_trade_history(market))
+        return total / amount, minr, maxr
 
     def get_ticker(self) -> dict:
         return {c: translate_ticker(v)
@@ -86,6 +92,68 @@ class Api:
                 for c, v in self._run_private_command('returnBalances').items()
                 if float(v) > 0.0}
 
+    def get_complete_balances(self) -> dict:
+        return {c: {k: float(a) for k, a in v.items()}
+                for c, v in self._run_private_command('returnCompleteBalances').items()}
+
+    def get_open_orders(self) -> dict:
+        return {c: o
+                for c, o in self._run_private_command('returnOpenOrders', {'currencyPair': 'all'}).items()
+                if o}
+
+    def _get_markets(self):
+        markets = {}
+        for m in self.get_ticker():
+            c1, c2 = m.split('_')
+            if not c1 in markets: markets[c1] = set()
+            markets[c1].add(c2)
+        return markets
+
+    def place_order(self, *, sell: tuple, buy: str, fire=False):
+        amount, what_to_sell = sell
+        print('try to sell %f %r for %r' % (amount, what_to_sell, buy))
+
+        def check_balance():
+            balances = self.get_balances()
+            if not what_to_sell in balances:
+                raise ValueError(
+                    'You do not have %r to sell' % what_to_sell)
+            print('> you have %f %r' % (balances[what_to_sell], what_to_sell))
+            if balances[what_to_sell] < amount:
+                raise ValueError(
+                    'You do not have enough %r to sell (just %f)' % (
+                        what_to_sell, balances[what_to_sell]))
+
+        check_balance()
+        if (what_to_sell in self._markets and
+                buy in self._markets[what_to_sell]):
+            market = what_to_sell + '_' + buy
+            action = 'buy'
+        elif (buy in self._markets and
+                  what_to_sell in self._markets[buy]):
+            market = buy + '_' + what_to_sell
+            action = 'sell'
+        else:
+            raise ValueError(
+                'No market available for %r -> %r' % (
+                    what_to_sell, buy))
+        current_rate, minr, maxr = self.get_current_rate(market)
+        # [todo]: here we can raise/lower by about 0.5%
+        target_rate = current_rate
+        target_amount = amount if action == 'sell' else amount / target_rate
+
+        print('> current rate is %f(%f-%f), target is %f' % (
+            current_rate, minr, maxr, target_rate))
+        print('> %r currencyPair=%s, rate=%f, amount=%f' % (
+            action, market, target_rate, target_amount))
+        if fire:
+            print('> send trade command..')
+            pprint(self._run_private_command(
+                action,
+                {'currencyPair': market,
+                 'rate': target_rate,
+                 'amount': target_amount}))
+
 
 def get_price(ticker, currency, coin):
     return 1.0 if currency == coin else ticker['%s_%s' % (currency, coin)]['last']
@@ -95,6 +163,7 @@ def get_EUR():
     def get_bla():
         return json.loads(urlopen('http://api.fixer.io/latest').read().decode())
     return 1.0 / float(get_bla()['rates']['USD'])
+
 
 def get_detailed_balances(api):
 
@@ -122,6 +191,20 @@ def get_detailed_balances(api):
             c, v, th['rate'], price, tot_usd * eur_price, th['trend'], hours))
 
     print('USD %.2f / EUR %.2f' % (cash_usd, cash_usd * eur_price))
+    pprint(api.get_open_orders())
+
+
+def sum_trades(history: list) -> tuple:
+    total = 0.0
+    amount = 0.0
+    min_rate = +99999999
+    max_rate = -99999999
+    for t in history:
+        total += t['total']
+        amount += t['amount']
+        min_rate = min(min_rate, t['rate'])
+        max_rate = max(max_rate, t['rate'])
+    return total, amount, min_rate, max_rate
 
 
 def trade_history_digest(history, calculate_trend=True):
@@ -132,15 +215,11 @@ def trade_history_digest(history, calculate_trend=True):
                 'duration': 0,
                 'trend': 0.0}
     #pprint(history)
-    total = 0.0
-    amount = 0.0
-    for t in history:
-        total += t['total']
-        amount += t['amount']
     trend = ((trade_history_digest(history[:len(history) // 2], calculate_trend=False)['rate'] /
               trade_history_digest(history[len(history) // 2:], calculate_trend=False)['rate'] - 1.0 )
              if calculate_trend else 1.0)
     #print(history[0]['date'], "|", history[-1]['date'], "|", len(history), "|", total / amount)
+    total, amount, _, _ = sum_trades(history)
     return {'rate': total / amount,
             'amount': amount,
             'total': total,
@@ -154,6 +233,10 @@ def get_args() -> dict:
 
     parser.add_argument("-v", "--verbose", action='store_true')
     parser.add_argument('cmd')
+    parser.add_argument('arg1', nargs='?')
+    parser.add_argument('arg2', nargs='?')
+    parser.add_argument('arg3', nargs='?')
+    parser.add_argument('arg4', nargs='?')
     return parser.parse_args()
 
 
@@ -172,9 +255,14 @@ def main():
         for c, v in api.get_balances().items():
             print(c, v)
             print(trade_history_digest(api.get_trade_history('BTC', c, 60 * 60 * 2)))
+    elif args.cmd == 'trade':
+        api.place_order(sell=(float(args.arg1), args.arg2), buy=args.arg3, fire=args.arg4=='fire')
+        print('your orders:', api.get_open_orders())
     else:
+        #api.place_order(sell=(0.001, 'BTC'), buy='FLO', fire=True)
+        #api.place_order(sell=(3, 'XMR'), buy='BTC')
+        #api.place_order(sell=(0.004, 'BTC'), buy='XMR')
         pass
-
 
 #    pprint(t)
 #    pprint(t.keys())
