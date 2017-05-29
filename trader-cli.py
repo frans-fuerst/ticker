@@ -29,6 +29,7 @@ def get_args() -> dict:
 
 def main():
     args = get_args()
+    log.basicConfig(level=log.DEBUG if args.verbose else log.INFO)
     api = trader.Api(**literal_eval(open('k').read()))
 
     if args.cmd == 'bal':

@@ -86,6 +86,8 @@ class DataPlot(qwt.QwtPlot):
         self.curveR.setData(self.x, self.y)
         self.replot()
 
+def clip(value, minv, maxv):
+    return min(max(value, minv), maxv)
 
 class MarketWidget(QtGui.QWidget):
 
@@ -107,9 +109,23 @@ class MarketWidget(QtGui.QWidget):
         self.update_plot()
 
     def update_plot(self):
-        data = self._trader_api.get_trade_history('BTC', 'XMR', duration=1 * 60 * 60)
+        data = self._trader_api.get_trade_history('BTC', 'XMR', duration=6 * 60 * 60)
+        def pre(x):
+            #return x['total'] / x['amount']
+            return clip(x['total'] / x['amount'], 0.0180, 0.02)
+
+        maverage = pre(data[0])
+        a = 0.02
+        ydata = []
+        for x in data:
+            #print(x['rate'], x['total'], x['amount'], x['total']/x['amount'])
+            maverage = (1 - a) * maverage + (a) * pre(x)
+            ydata.append(maverage)
+
         self._plot.set_data([time.mktime(x['date'].timetuple()) for x in data],
-                            [x['rate'] for x in data])
+                          #  [(x['rate'] * 100) for x in data])
+                                  #[pre(x) for x in data])
+                                  ydata)
         self._plot.redraw()
 
 
