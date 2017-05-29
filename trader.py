@@ -1,22 +1,21 @@
 #!/usr/bin/env python3
 
+__all__ = ['translate_trade']
+
 import json
 import urllib
-import sys
-import os
+#import sys
+#import os
 from urllib.request import urlopen, Request
 from datetime import datetime
 from pprint import pprint
-from ast import literal_eval
 import hmac
 import hashlib
-import logging
+import logging as log
 import time
-import argparse
 
 PUBLIC_URL = 'https://poloniex.com/public?command=%s'
 BASE = {'BTC', 'ETH', 'XMR', 'USDT'}
-
 
 def translate_trade(trade):
     return {'date': datetime.strptime(trade['date'], '%Y-%m-%d %H:%M:%S'),
@@ -59,14 +58,20 @@ class Api:
             'https://poloniex.com/tradingApi',
             data=post_data,
             headers={'Sign': sign, 'Key': self._key})).read()
-        return json.loads(ret.decode())
+        result = json.loads(ret.decode())
+        if 'error' in result:
+            raise RuntimeError(result['error'])
+        return result
 
     def _run_public_command(self, command: str, req=None) -> str:
         req = {**(req if req else {}), **{'command': command}}
         post_data = '&'.join(['%s=%s' % (k, v) for k, v in req.items()])
         url = 'https://poloniex.com/public?'
         ret = urlopen(url + post_data).read()
-        return json.loads(ret.decode())
+        result = json.loads(ret.decode())
+        if 'error' in result:
+            raise RuntimeError(result['error'])
+        return result
 
     def _get_trade_history(self, currency_pair, duration=None) -> dict:
         req = {'currencyPair': currency_pair}
@@ -229,172 +234,4 @@ def trade_history_digest(history, calculate_trend=True):
             'duration': int((history[0]['date'] - history[-1]['date']).total_seconds()),
             'trend': trend * 100,
             }
-
-
-def get_args() -> dict:
-    parser = argparse.ArgumentParser(description='ticker')
-
-    parser.add_argument("-v", "--verbose", action='store_true')
-    parser.add_argument('cmd')
-    parser.add_argument('arg1', nargs='?')
-    parser.add_argument('arg2', nargs='?')
-    parser.add_argument('arg3', nargs='?')
-    parser.add_argument('arg4', nargs='?')
-    return parser.parse_args()
-
-
-from PyQt4 import QtGui, QtCore, Qt, uic
-import qwt
-import signal
-
-class Trader(QtGui.QMainWindow):
-
-    def __init__(self):
-
-        class graph:
-            def __init__(self, plot, title):
-                self._plot = plot
-                self._plot.setMaximumHeight(100)
-                #self._plot.setCanvasBackground(Qt.black)
-                self._plot.setAxisTitle(Qwt.QwtPlot.xBottom, 'Time')
-                #self._plot.setAxisScale(Qwt.QwtPlot.xBottom, 0, 10, 1)
-                self._plot.setAxisTitle(Qwt.QwtPlot.yLeft, title)
-                #self._plot.setAxisScale(Qwt.QwtPlot.yLeft, 0, 250, 40)
-                #self._plot.setAxisAutoScale(Qwt.QwtPlot.yLeft, True)
-                #self._plot.setAxisAutoScale(Qwt.QwtPlot.xBottom, True)
-                self._plot.replot()
-                self._plot.enableAxis(Qwt.QwtPlot.xBottom, False)
-                #self._plot.enableAxis(Qwt.QwtPlot.yLeft, False)
-
-                self._xdata = []
-                self._ydata = []
-                self._curve = Qwt.QwtPlotCurve('')
-                self._curve.setRenderHint(Qwt.QwtPlotItem.RenderAntialiased)
-                #pen = QPen(QColor('limegreen'))
-                #pen.setWidth(2)
-                #self._curve.setPen(pen)
-                #self._curve.setData(self._xdata, self._ydata)
-
-                scaleWidget = plot.axisWidget(Qwt.QwtPlot.yLeft)
-                #scaleWidget.setFixedWidth(200)
-                #d = scaleWidget.scaleDraw()
-                #d.minimumExtent
-                scaleWidget.scaleDraw().setMinimumExtent(100)
-
-                self._curve.attach(self._plot)
-
-            def add_value(self, t, value):
-                if len(self._ydata) > 0 and self._ydata[-1] == value:
-                    return
-                self._xdata.append(t)
-                self._ydata.append(value)
-                self._curve.setData(self._xdata, self._ydata)
-                #self.plt_raw.setAxisScale(Qwt.QwtPlot.xBottom, self._xdata[0], self._xdata[-1])
-                #self.plt_raw.setAxisScale(Qwt.QwtPlot.xBottom, self._xdata[0], self._xdata[-1])
-                self._plot.replot()
-
-
-        self._colors = [
-            QtCore.Qt.green,
-            QtCore.Qt.blue,
-            QtCore.Qt.red,
-            QtCore.Qt.cyan,
-            QtCore.Qt.magenta,
-            QtCore.Qt.darkBlue,
-            QtCore.Qt.darkCyan,
-            QtCore.Qt.darkGray,
-            QtCore.Qt.darkGreen,
-            QtCore.Qt.darkMagenta,
-            QtCore.Qt.darkRed,
-            QtCore.Qt.darkYellow,
-            QtCore.Qt.lightGray,
-            QtCore.Qt.gray,
-            QtCore.Qt.white,
-            QtCore.Qt.black,
-            QtCore.Qt.yellow]
-
-        QtGui.QMainWindow.__init__(self)
-
-        self.setMouseTracking(True)
-        self._directory = os.path.dirname(os.path.realpath(__file__))
-        uic.loadUi(os.path.join(self._directory, 'trader.ui'), self)
-
-        #self._graphs = {}
-        #self._graphs['raw']        = graph(self.plt_raw, 'raw data')
-        #self._graphs['meditation'] = graph(self.plt_meditation, 'meditation')
-        #self._graphs['attention']  = graph(self.plt_attention, 'attention')
-        #self._graphs['delta']      = graph(self.plt_delta, 'delta')
-        #self._graphs['theta']      = graph(self.plt_theta, 'theta')
-        #self._graphs['low_alpha']  = graph(self.plt_low_alpha, 'alpha_low')
-        #self._graphs['high_alpha'] = graph(self.plt_high_alpha, 'alpha_high')
-        #self._graphs['low_beta']   = graph(self.plt_low_beta, 'beta_low')
-        #self._graphs['high_beta']  = graph(self.plt_high_beta, 'beta_high')
-        #self._graphs['low_gamma']  = graph(self.plt_low_gamma, 'gamma_low')
-        #self._graphs['mid_gamma']  = graph(self.plt_high_gamma, 'gamma_mid')
-        #self.plt_raw.enableAxis(Qwt.QwtPlot.xBottom, True)
-        #self.plt_raw.setMaximumHeight(200)
-
-        self.show()
-
-def show_gui():
-#    logging.basicConfig(level=logging.INFO)
-
-#    LOG.info(sys.executable)
-#    LOG.info('.'.join((str(e) for e in sys.version_info)))
-
-    app = QtGui.QApplication(sys.argv)
-    ex = Trader()
-    signal.signal(signal.SIGINT, signal.SIG_DFL)
-#    for s in (signal.SIGABRT, signal.SIGINT, signal.SIGSEGV, signal.SIGTERM):
-#        signal.signal(s, lambda signal, frame: sigint_handler(signal, ex))
-
-    # catch the interpreter every now and then to be able to catch signals
-#    timer = QtCore.QTimer()
-#    timer.start(200)
-#    timer.timeout.connect(lambda: None)
-
-    sys.exit(app.exec_())
-
-
-def main():
-    args = get_args()
-    api = Api(**literal_eval(open('k').read()))
-
-    if args.cmd == 'bal':
-        get_detailed_balances(api)
-    elif args.cmd == 'bla':
-        t = api.get_ticker()
-        for c, v in sorted(t.items(), key=lambda x: x[1]['percentChange'], reverse=True)[:5]:
-            print(c, v['percentChange'])
-    elif args.cmd == 'best':
-        print('get balances..')
-        for c, v in api.get_balances().items():
-            print(c, v)
-            print(trade_history_digest(api.get_trade_history('BTC', c, 60 * 60 * 2)))
-    elif args.cmd == 'trade':
-        api.place_order(sell=(float(args.arg1), args.arg2), buy=args.arg3, fire=args.arg4=='fire')
-        print('your orders:', api.get_open_orders())
-    elif args.cmd == 'gui':
-        show_gui()
-    else:
-        #api.place_order(sell=(0.001, 'BTC'), buy='FLO', fire=True)
-        #api.place_order(sell=(3, 'XMR'), buy='BTC')
-        #api.place_order(sell=(0.004, 'BTC'), buy='XMR')
-        pass
-
-#    pprint(t)
-#    pprint(t.keys())
-#    pprint(len(t))
-#    for k in t:
-#        h = get_trade_history(api, k)
-
-    #pprint(get_trade_history(api, 'USDT_BTC'))
-    # pprint(t)
-    #pprint()
-    #pprint(get_USDT_value(t, 'XMR'))
-    #pprint(get_USDT_value(t, 'BTC'))
-
-
-if __name__ == '__main__':
-    main()
 
