@@ -97,6 +97,7 @@ class MarketWidget(QtGui.QWidget):
         QtGui.QWidget.__init__(self)
         uic.loadUi(os.path.join(os.path.dirname(__file__), 'market.ui'), self)
         self._trader_api = api
+        self._market = market
         self.lbl_market.setText(market)
         self._plot = DataPlot()
         self.layout().addWidget(self._plot)
@@ -109,7 +110,8 @@ class MarketWidget(QtGui.QWidget):
         self.update_plot()
 
     def update_plot(self):
-        data = self._trader_api.get_trade_history('BTC', 'XMR', duration=6 * 60 * 60)
+        log.debug('update trade history for %r')
+        data = trader.Api.get_trade_history('BTC', 'XMR', duration=6 * 60 * 60)
         def pre(x):
             #return x['total'] / x['amount']
             return clip(x['total'] / x['amount'], 0.0180, 0.02)
@@ -138,7 +140,12 @@ class Trader(QtGui.QMainWindow):
         self.setMouseTracking(True)
         self._directory = os.path.dirname(os.path.realpath(__file__))
         uic.loadUi(os.path.join(self._directory, 'trader.ui'), self)
-        self._trader_api = trader.Api(**ast.literal_eval(open('k').read()))
+        try:
+            self._trader_api = trader.Api(**ast.literal_eval(open('k').read()))
+        except FileNotFoundError:
+            log.warning('did not find key file - only public access is possible')
+            self._trader_api = None
+
         self._add_market('BTC_XMR')
         self.show()
 
