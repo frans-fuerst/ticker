@@ -4,8 +4,6 @@ __all__ = ['translate_trade']
 
 import json
 import urllib
-#import sys
-#import os
 from urllib.request import urlopen, Request
 from datetime import datetime
 from pprint import pprint
@@ -14,8 +12,11 @@ import hashlib
 import logging as log
 import time
 
-PUBLIC_URL = 'https://poloniex.com/public?command=%s'
-BASE = {'BTC', 'ETH', 'XMR', 'USDT'}
+ALLOW_CACHED_VALUES = False
+
+
+class ServerError(RuntimeError):
+    pass
 
 def translate_trade(trade):
     return {'date': datetime.strptime(trade['date'], '%Y-%m-%d %H:%M:%S'),
@@ -42,7 +43,7 @@ class Api:
     def __init__(self, key, secret):
         self._key = key.encode()
         self._secret = secret.encode()
-        self._markets = self._get_markets()
+        self._markets = self.get_markets()
 
     def _run_private_command(self, command, req=None):
         req = req if req else {}
@@ -54,46 +55,57 @@ class Api:
             self._secret,
             msg=post_data,
             digestmod=hashlib.sha512).hexdigest()
-        ret = urlopen(Request(
-            'https://poloniex.com/tradingApi',
-            data=post_data,
-            headers={'Sign': sign, 'Key': self._key})).read()
+        try:
+            ret = urlopen(Request(
+                'https://poloniex.com/tradingApi',
+                data=post_data,
+                headers={'Sign': sign, 'Key': self._key})).read()
+        except urllib.error.URLError as exc:
+            raise ServerError(str(exc)) from exc
         result = json.loads(ret.decode())
         if 'error' in result:
             raise RuntimeError(result['error'])
         return result
 
-    def _run_public_command(self, command: str, req=None) -> str:
+    @staticmethod
+    def _run_public_command(command: str, req=None) -> str:
         req = {**(req if req else {}), **{'command': command}}
         post_data = '&'.join(['%s=%s' % (k, v) for k, v in req.items()])
         url = 'https://poloniex.com/public?'
-        ret = urlopen(url + post_data).read()
+        try:
+            ret = urlopen(url + post_data).read()
+        except urllib.error.URLError as exc:
+            raise ServerError(str(exc)) from exc
         result = json.loads(ret.decode())
         if 'error' in result:
             raise RuntimeError(result['error'])
         return result
 
-    def _get_trade_history(self, currency_pair, duration=None) -> dict:
+    @staticmethod
+    def _get_trade_history(currency_pair, duration=None) -> dict:
         req = {'currencyPair': currency_pair}
         if duration:
             req.update({'start': '%d' % (time.time() - duration),
                         'end': '9999999999'})
         return [translate_trade(t)
-                for t in self._run_public_command(
+                for t in Api._run_public_command(
                     'returnTradeHistory', req)]
 
-    def get_trade_history(self, primary, coin, duration) -> dict:
+    @staticmethod
+    def get_trade_history(primary, coin, duration) -> dict:
         if primary == coin:
             return []
-        return self._get_trade_history(primary + '_' + coin, duration)
+        return Api._get_trade_history(primary + '_' + coin, duration)
 
-    def get_current_rate(self, market):
-        total, amount, minr, maxr = sum_trades(self._get_trade_history(market))
+    @staticmethod
+    def get_current_rate(market):
+        total, amount, minr, maxr = sum_trades(Api._get_trade_history(market))
         return total / amount, minr, maxr
 
-    def get_ticker(self) -> dict:
+    @staticmethod
+    def get_ticker() -> dict:
         return {c: translate_ticker(v)
-                for c, v in self._run_public_command('returnTicker').items()}
+                for c, v in Api._run_public_command('returnTicker').items()}
 
     def get_balances(self) -> dict:
         return {c: float(v)
@@ -109,9 +121,10 @@ class Api:
                 for c, o in self._run_private_command('returnOpenOrders', {'currencyPair': 'all'}).items()
                 if o}
 
-    def _get_markets(self):
+    @staticmethod
+    def get_markets():
         markets = {}
-        for m in self.get_ticker():
+        for m in Api.get_ticker():
             c1, c2 = m.split('_')
             if not c1 in markets: markets[c1] = set()
             markets[c1].add(c2)
