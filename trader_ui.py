@@ -6,15 +6,22 @@ import sys
 import os
 import signal
 import ast
+import time
 import argparse
 import logging as log
 from PyQt4 import QtGui, QtCore, Qt, uic
 import qwt
+
 import trader
 
 HISTORY_LENGTH = 6 * 3600
 #HISTORY_LENGTH = 100
-UPDATE_INTERVAL_SEC = 1 * 60
+UPDATE_INTERVAL_SEC = 5 * 60
+MARKETS = (
+        'BTC_XMR',
+        'BTC_FLO',
+        'BTC_ETH',
+)
 
 QT_COLORS = [
     QtCore.Qt.green,
@@ -65,7 +72,6 @@ class DataPlot(qwt.QwtPlot):
 
         self.redraw()
 
-
     def alignScales(self):
         self.canvas().setFrameStyle(Qt.QFrame.Box | Qt.QFrame.Plain)
         self.canvas().setLineWidth(1)
@@ -104,10 +110,10 @@ class MarketWidget(QtGui.QWidget):
         #self.tbl_values.verticalHeader().setDefaultSectionSize(32)
         #self.tbl_values.verticalHeader().setResizeMode(
             #QtGui.QHeaderView.Interactive)
-        self.update_plot()
+#        self.update_plot()
 
     def update_plot(self):
-        log.debug('update trade history for %r')
+        log.info('update trade history for %r')
         data = trader.Api.get_trade_history(*self._market.split('_'), duration=HISTORY_LENGTH)
         if not data: return
         times, rates = trader.get_plot_data(data)
@@ -139,28 +145,33 @@ class Trader(QtGui.QMainWindow):
         self._update_timer = QtCore.QTimer(self)
         self._update_timer.timeout.connect(self._update_timer_timeout)
         self._update_timer.setInterval(UPDATE_INTERVAL_SEC * 1000)
-        #self._update_timer.start()
+        self._update_timer.start()
 
         self.pb_check.clicked.connect(self._pb_check_clicked)
         self.pb_buy.clicked.connect(self._pb_buy_clicked)
         self.cb_trade_curr_sell.currentIndexChanged.connect(self._cb_trade_curr_sell_currentIndexChanged)
 
+        self._add_market('USDT_BTC')
+        for m in MARKETS:
+            self._add_market(m)
+
         self.show()
         self._update_values()
 
     def _update_timer_timeout(self):
-        try:
-            self._update_values()
-        except Exception as exc:
-            print('%r' % exc)
+        log.info('Update timeout')
+        self._update_values()
 
     def _update_values(self):
-        print('_update_values')
-        self._add_market('USDT_BTC')
-        #self._add_market('BTC_XMR')
-        #self._add_market('BTC_FLO')
-        self._add_market('BTC_ETH')
-        self._update_balances()
+        try:
+            log.info('Update')
+            t1 = time.time()
+            for _, w in self._markets.items():
+                w.update_plot()
+            self._update_balances()
+            log.info('update took %.2fs', time.time() - t1)
+        except Exception as exc:
+            log.error('Exception while updating %r', exc)
 
     def _pb_check_clicked(self):
         self.pb_buy.setEnabled(True)
@@ -169,7 +180,8 @@ class Trader(QtGui.QMainWindow):
         pass
 
     def _cb_trade_curr_sell_currentIndexChanged(self, index):
-        print(self.cb_trade_curr_sell.itemText(index))
+        log.info('selected currency to sell: %r',
+                 self.cb_trade_curr_sell.itemText(index))
 
     def _update_balances(self):
         if not self._trader_api:
@@ -177,10 +189,10 @@ class Trader(QtGui.QMainWindow):
 
         self._balances = self._trader_api.get_balances()
         self.cb_trade_curr_sell.clear()
+        self.lst_balances.clear()
         for c, a in self._balances.items():
             self.cb_trade_curr_sell.addItem(c)
             self.lst_balances.addItem('%r: %f' % (c, a))
-
 
         if not 'USDT_BTC' in self._markets:
             return
@@ -190,7 +202,7 @@ class Trader(QtGui.QMainWindow):
         self.lbl_XBT_EUR.setText('BTC/EUR: %.2f' % (xbt_rate * eur_price))
 
     def _add_market(self, market):
-        log.info('fetch info for %r', market)
+        log.info('add market: %r', market)
         new_item = QtGui.QListWidgetItem()
         new_item.setSizeHint(QtCore.QSize(110, 210))
         new_item.setFlags(QtCore.Qt.ItemIsEnabled)
