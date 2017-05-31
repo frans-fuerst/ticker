@@ -11,6 +11,7 @@ import hmac
 import hashlib
 import logging as log
 import time
+import functools
 
 ALLOW_CACHED_VALUES = 'ALLOW'  # 'NEVER', 'FORCE'
 
@@ -18,12 +19,52 @@ ALLOW_CACHED_VALUES = 'ALLOW'  # 'NEVER', 'FORCE'
 class ServerError(RuntimeError):
     pass
 
+
+def clip(value, minv, maxv):
+    return min(max(value, minv), maxv)
+
+
 def get_rates(data):
     return tuple(x['total'] / x['amount'] for x in data)
 
 
-def clean(data):
+def clean(data, factor):
+    # todo: must be weighted avarage
+    av = functools.reduce(lambda x, y: x + y, data) / len(data)
+    c = 0
+    r = 1 / factor
+    for d in data:
+        if not r < d/av < factor:
+#            print(d, d/av)
+            c += 1
+    print('av', av, factor, len(data), c)
+#    return tuple(d if r < d / av < factor else av for d in data)
+#    return tuple(clip(d, 0.0170, 0.02) for d in data)
     return data
+
+
+def get_maverage(data, factor):
+    maverage = data[0]
+    result = []
+    for x in data:
+        maverage = (1 - factor) * maverage + (factor) * x
+        result.append(maverage)
+    return result
+
+
+def get_plot_data(data):
+    # return sum(x['total'] / x['amount'] for x in data) / len(data)
+
+    for i in range(50):
+        ydata = clean(get_rates(data), 1.0 + i / 10)
+    ydata = get_maverage(ydata, 0.02)
+
+    xdata = [time.mktime(x['date'].timetuple()) for x in data]
+
+                          #  [(x['rate'] * 100) for x in data])
+                                  #[pre(x) for x in data])
+    return xdata, ydata
+
 
 def get_unique_name(data):
     x = repr(list('%s_%s' % (k, 'xxx' if k=='start' else v) for k, v in sorted(data.items())))

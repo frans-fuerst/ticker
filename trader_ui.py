@@ -56,7 +56,7 @@ class DataPlot(qwt.QwtPlot):
         mY.attach(self)
 
         self.enableAxis(qwt.QwtPlot.xBottom, False)
-        self.enableAxis(qwt.QwtPlot.yLeft, False)
+        self.enableAxis(qwt.QwtPlot.yLeft, True)
         # self.setAxisTitle(qwt.QwtPlot.xBottom, "Time (seconds)")
         # self.setAxisTitle(qwt.QwtPlot.yLeft, "Values")
 
@@ -87,8 +87,6 @@ class DataPlot(qwt.QwtPlot):
         self.curveR.setData(self.x, self.y)
         self.replot()
 
-def clip(value, minv, maxv):
-    return min(max(value, minv), maxv)
 
 class MarketWidget(QtGui.QWidget):
 
@@ -113,20 +111,8 @@ class MarketWidget(QtGui.QWidget):
     def update_plot(self):
         log.debug('update trade history for %r')
         data = trader.Api.get_trade_history(*self._market.split('_'), duration=6 * 60 * 60)
-        rates = trader.clean(trader.get_rates(data))
-        #return clip(x['total'] / x['amount'], 0.0180, 0.02)
-
-        maverage = rates[0]
-        a = 0.02
-        ydata = []
-        for x in rates:
-            maverage = (1 - a) * maverage + (a) * x
-            ydata.append(maverage)
-
-        self._plot.set_data([time.mktime(x['date'].timetuple()) for x in data],
-                          #  [(x['rate'] * 100) for x in data])
-                                  #[pre(x) for x in data])
-                                  ydata)
+        plotdata = trader.get_plot_data(data)
+        self._plot.set_data(*plotdata)
         self._plot.redraw()
 
 
@@ -151,7 +137,7 @@ class Trader(QtGui.QMainWindow):
 
     def _add_market(self, market):
         new_item = QtGui.QListWidgetItem()
-        new_item.setSizeHint(QtCore.QSize(110, 110))
+        new_item.setSizeHint(QtCore.QSize(110, 210))
         new_item.setFlags(QtCore.Qt.ItemIsEnabled)
         new_market = MarketWidget(market, self._trader_api)
         self.lst_markets.addItem(new_item)
