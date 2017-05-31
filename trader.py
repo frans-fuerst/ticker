@@ -69,10 +69,10 @@ def get_plot_data(data):
     return xdata, ydata
 
 
-def get_unique_name(data):
-    x = repr(list('%s_%s' % (k, 'xxx' if k=='start' else v) for k, v in sorted(data.items())))
-    return (x
-            .replace(':', '=')
+def get_unique_name(data: dict) -> str:
+    ''' turn dict into unambiguous string '''
+    return ('.'.join('%s=%s' % (k, 'xxx' if k=='start' else v)
+                      for k, v in sorted(data.items()))
             .replace(',', '_')
             .translate(dict.fromkeys(map(ord, u"\"'[]{}() "))))
 
