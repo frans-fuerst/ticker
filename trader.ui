@@ -21,12 +21,18 @@
     <item>
      <layout class="QVBoxLayout" name="verticalLayout">
       <item>
-       <layout class="QHBoxLayout" name="horizontalLayout_2">
-        <item>
+       <layout class="QHBoxLayout" name="horizontalLayout_2"/>
+      </item>
+      <item>
+       <layout class="QGridLayout" name="gridLayout">
+        <property name="topMargin">
+         <number>10</number>
+        </property>
+        <item row="0" column="0">
          <widget class="QLabel" name="lbl_XBT_USD">
           <property name="font">
            <font>
-            <pointsize>15</pointsize>
+            <pointsize>13</pointsize>
             <weight>75</weight>
             <bold>true</bold>
            </font>
@@ -36,11 +42,11 @@
           </property>
          </widget>
         </item>
-        <item>
+        <item row="0" column="1">
          <widget class="QLabel" name="lbl_XBT_EUR">
           <property name="font">
            <font>
-            <pointsize>15</pointsize>
+            <pointsize>13</pointsize>
             <weight>75</weight>
             <bold>true</bold>
            </font>
@@ -50,17 +56,31 @@
           </property>
          </widget>
         </item>
-        <item>
+        <item row="1" column="1">
          <widget class="QLabel" name="lbl_bal_EUR">
           <property name="font">
            <font>
-            <pointsize>15</pointsize>
+            <pointsize>13</pointsize>
             <weight>75</weight>
             <bold>true</bold>
            </font>
           </property>
           <property name="text">
            <string>balances/EUR</string>
+          </property>
+         </widget>
+        </item>
+        <item row="1" column="0">
+         <widget class="QLabel" name="lbl_bal_BTC">
+          <property name="font">
+           <font>
+            <pointsize>13</pointsize>
+            <weight>75</weight>
+            <bold>true</bold>
+           </font>
+          </property>
+          <property name="text">
+           <string>balances/BTC</string>
           </property>
          </widget>
         </item>
