@@ -113,7 +113,7 @@ class MarketWidget(QtGui.QWidget):
 #        self.update_plot()
 
     def update_plot(self):
-        log.info('update trade history for %r')
+        log.info('update trade history for %r', self._market)
         data = trader.Api.get_trade_history(*self._market.split('_'), duration=HISTORY_LENGTH)
         if not data: return
         times, rates = trader.get_plot_data(data)
