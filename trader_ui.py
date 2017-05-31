@@ -40,7 +40,7 @@ class DataPlot(qwt.QwtPlot):
         self.setCanvasBackground(Qt.Qt.green)
         self.alignScales()
 
-        self.x = [1,2,3]
+        self.x = [1, 2, 3]
         self.y = [1.0, 2.0, 3.0]
 
         self.curveR = qwt.QwtPlotCurve("Data Moving Right")
@@ -104,10 +104,11 @@ class MarketWidget(QtGui.QWidget):
 
     def update_plot(self):
         log.debug('update trade history for %r')
-        data = trader.Api.get_trade_history(*self._market.split('_'), duration=12 * 60 * 60)
+        data = trader.Api.get_trade_history(*self._market.split('_'), duration=6 * 3600)
+        if not data: return
         times, rates = trader.get_plot_data(data)
         self._current_rate = rates[-1]
-        self.lbl_current.setText('%.2fh / %f' % ((times[0] - times[-1]) / 3600, self._current_rate))
+        self.lbl_current.setText('%.2fh / %f' % ((times[-1] - times[0]) / 3600, self._current_rate))
         self._plot.set_data(times, rates)
         self._plot.redraw()
 
@@ -152,6 +153,7 @@ class Trader(QtGui.QMainWindow):
         self.lbl_XBT_EUR.setText('%.2f' % (xbt_rate * eur_price))
 
     def _add_market(self, market):
+        log.info('fetch info for %r', market)
         new_item = QtGui.QListWidgetItem()
         new_item.setSizeHint(QtCore.QSize(110, 210))
         new_item.setFlags(QtCore.Qt.ItemIsEnabled)

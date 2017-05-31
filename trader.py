@@ -24,6 +24,7 @@ def get_rates(data):
 
 
 def clean(data, factor):
+    if not data: return data
     # todo: must be weighted avarage
 #    av = functools.reduce(lambda x, y: x + y, data) / len(data)
     r = 1 / factor
@@ -37,12 +38,13 @@ def clean(data, factor):
     result = []
     mvalue = data[0]
     for e in data:
-        mvalue = e if r < e / mvalue < factor else mvalue
+        mvalue = e if mvalue == 0.0 or r < e / mvalue < factor else mvalue
         result.append(mvalue)
     return result
 
 
 def get_maverage(data, factor):
+    if not data: return data
     maverage = data[0]
     result = []
     for x in data:
@@ -63,7 +65,7 @@ def get_plot_data(data):
 
     ydata = get_maverage(ydata, 0.02)
 
-    xdata = [time.mktime(x['date'].timetuple()) for x in data]
+    xdata = [time.mktime(x['date'].timetuple()) - time.time() for x in data]
                           #  [(x['rate'] * 100) for x in data])
                                   #[pre(x) for x in data])
     return xdata, ydata
@@ -99,6 +101,7 @@ def translate_ticker(val):
             'lowestAsk': float(val['lowestAsk']),
             'percentChange': float(val['percentChange']),
             'quoteVolume': float(val['quoteVolume'])}
+
 
 def _fetch_http(request, request_data):
     assert ALLOW_CACHED_VALUES in {'NEVER', 'ALLOW', 'FORCE'}
@@ -162,9 +165,9 @@ class Api:
         if duration:
             req.update({'start': '%d' % (time.time() - duration),
                         'end': '9999999999'})
-        return [translate_trade(t)
+        return list(reversed([translate_trade(t)
                 for t in Api._run_public_command(
-                    'returnTradeHistory', req)]
+                    'returnTradeHistory', req)]))
 
     @staticmethod
     def get_trade_history(primary, coin, duration) -> dict:
