@@ -71,7 +71,7 @@ def get_plot_data(data):
 
 def get_unique_name(data: dict) -> str:
     ''' turn dict into unambiguous string '''
-    return ('.'.join('%s=%s' % (k, 'xxx' if k=='start' else v)
+    return ('.'.join('%s=%s' % (k, 'xxx' if k in {'start', 'nonce'} else v)
                       for k, v in sorted(data.items()))
             .replace(',', '_')
             .translate(dict.fromkeys(map(ord, u"\"'[]{}() "))))
