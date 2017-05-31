@@ -12,11 +12,26 @@ import hashlib
 import logging as log
 import time
 
-ALLOW_CACHED_VALUES = False
+ALLOW_CACHED_VALUES = 'ALLOW'  # 'NEVER', 'FORCE'
 
 
 class ServerError(RuntimeError):
     pass
+
+def get_rates(data):
+    return tuple(x['total'] / x['amount'] for x in data)
+
+
+def clean(data):
+    return data
+
+def get_unique_name(data):
+    x = repr(list('%s_%s' % (k, 'xxx' if k=='start' else v) for k, v in sorted(data.items())))
+    return (x
+            .replace(':', '=')
+            .replace(',', '_')
+            .translate(dict.fromkeys(map(ord, u"\"'[]{}() "))))
+
 
 def translate_trade(trade):
     return {'date': datetime.strptime(trade['date'], '%Y-%m-%d %H:%M:%S'),
@@ -26,6 +41,7 @@ def translate_trade(trade):
             'amount': float(trade['amount']),
             'rate': float(trade['rate']),
             'type': trade['type']}
+
 
 def translate_ticker(val):
     return {'baseVolume': float(val['baseVolume']),
@@ -39,44 +55,58 @@ def translate_ticker(val):
             'percentChange': float(val['percentChange']),
             'quoteVolume': float(val['quoteVolume'])}
 
+
 class Api:
     def __init__(self, key, secret):
         self._key = key.encode()
         self._secret = secret.encode()
         self._markets = self.get_markets()
 
+    @staticmethod
+    def _fetch(request, request_data):
+        assert ALLOW_CACHED_VALUES in {'NEVER', 'ALLOW', 'FORCE'}
+        filename = get_unique_name(request_data) + '.cache'
+        if ALLOW_CACHED_VALUES in {'NEVER', 'ALLOW'}:
+            try:
+                result = urlopen(request).read()
+                with open(filename, 'wb') as file:
+                    file.write(result)
+                return result
+            except urllib.error.URLError as exc:
+                if ALLOW_CACHED_VALUES == 'NEVER':
+                    raise ServerError(str(exc)) from exc
+        try:
+            with open(filename, 'rb') as file:
+                log.warning('use chached values for %r', request)
+                return file.read()
+        except FileNotFoundError as exc:
+            raise ServerError(str(exc)) from exc
+
     def _run_private_command(self, command, req=None):
-        req = req if req else {}
-        req.update({
-            'command': command,
-            'nonce': int(time.time() * 1000)})
-        post_data = urllib.parse.urlencode(req).encode()
+        request_data = {**(req if req else {}),
+                        **{'command': command,
+                           'nonce': int(time.time() * 1000)}}
+        post_data = urllib.parse.urlencode(request_data).encode()
         sign = hmac.new(
             self._secret,
             msg=post_data,
             digestmod=hashlib.sha512).hexdigest()
-        try:
-            ret = urlopen(Request(
-                'https://poloniex.com/tradingApi',
-                data=post_data,
-                headers={'Sign': sign, 'Key': self._key})).read()
-        except urllib.error.URLError as exc:
-            raise ServerError(str(exc)) from exc
-        result = json.loads(ret.decode())
+        request = Request(
+            'https://poloniex.com/tradingApi',
+            data=post_data,
+            headers={'Sign': sign, 'Key': self._key})
+        result = json.loads(Api._fetch(request, request_data).decode())
         if 'error' in result:
             raise RuntimeError(result['error'])
         return result
 
     @staticmethod
     def _run_public_command(command: str, req=None) -> str:
-        req = {**(req if req else {}), **{'command': command}}
-        post_data = '&'.join(['%s=%s' % (k, v) for k, v in req.items()])
-        url = 'https://poloniex.com/public?'
-        try:
-            ret = urlopen(url + post_data).read()
-        except urllib.error.URLError as exc:
-            raise ServerError(str(exc)) from exc
-        result = json.loads(ret.decode())
+        request_data = {**(req if req else {}),
+                        **{'command': command}}
+        post_data = '&'.join(['%s=%s' % (k, v) for k, v in request_data.items()])
+        request = 'https://poloniex.com/public?' + post_data
+        result = json.loads(Api._fetch(request, request_data).decode())
         if 'error' in result:
             raise RuntimeError(result['error'])
         return result

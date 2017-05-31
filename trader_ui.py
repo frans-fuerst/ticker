@@ -7,6 +7,7 @@ import os
 import signal
 import ast
 import time
+import argparse
 import logging as log
 from PyQt4 import QtGui, QtCore, Qt, uic
 import qwt
@@ -111,17 +112,15 @@ class MarketWidget(QtGui.QWidget):
 
     def update_plot(self):
         log.debug('update trade history for %r')
-        data = trader.Api.get_trade_history('BTC', 'XMR', duration=6 * 60 * 60)
-        def pre(x):
-            #return x['total'] / x['amount']
-            return clip(x['total'] / x['amount'], 0.0180, 0.02)
+        data = trader.Api.get_trade_history(*self._market.split('_'), duration=6 * 60 * 60)
+        rates = trader.clean(trader.get_rates(data))
+        #return clip(x['total'] / x['amount'], 0.0180, 0.02)
 
-        maverage = pre(data[0])
+        maverage = rates[0]
         a = 0.02
         ydata = []
-        for x in data:
-            #print(x['rate'], x['total'], x['amount'], x['total']/x['amount'])
-            maverage = (1 - a) * maverage + (a) * pre(x)
+        for x in rates:
+            maverage = (1 - a) * maverage + (a) * x
             ydata.append(maverage)
 
         self._plot.set_data([time.mktime(x['date'].timetuple()) for x in data],
@@ -147,6 +146,7 @@ class Trader(QtGui.QMainWindow):
             self._trader_api = None
 
         self._add_market('BTC_XMR')
+        self._add_market('BTC_FLO')
         self.show()
 
     def _add_market(self, market):
@@ -166,8 +166,18 @@ def show_gui():
     return app.exec_()
 
 
+def get_args() -> dict:
+    parser = argparse.ArgumentParser(description='history_server')
+
+    parser.add_argument("-v", "--verbose", action='store_true')
+    parser.add_argument("-c", "--allow-cached", action='store_true')
+    return parser.parse_args()
+
+
 def main():
+    args = get_args()
     log.basicConfig(level=log.INFO)
+    trader.ALLOW_CACHED_VALUES = 'ALLOW' if args.allow_cached else 'NEVER'
     sys.exit(show_gui())
 
 

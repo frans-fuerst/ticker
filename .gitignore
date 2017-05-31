@@ -1,5 +1,6 @@
 *.json
 *.wpu
+*.cache
 k
 
 # Byte-compiled / optimized / DLL files

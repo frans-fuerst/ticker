@@ -50,7 +50,8 @@ def serve(interval):
             for p, secondaries in trader.Api.get_markets().items():
                 for s in secondaries:
                     print('%s_%s' % (p, s))
-                # trader.Api.get_trade_history(coin, duration)
+                    trader.Api.get_trade_history(p, s, 5*60*60)
+            log.info('all coins fetched')
         except trader.ServerError as exc:
             log.warning('Could not communicate with Trading server (%r)', exc)
         time.sleep(interval)
@@ -60,12 +61,14 @@ def get_args() -> dict:
     parser = argparse.ArgumentParser(description='history_server')
 
     parser.add_argument("-v", "--verbose", action='store_true')
+    parser.add_argument("-c", "--allow-cached", action='store_true')
     return parser.parse_args()
 
 
 def main():
     args = get_args()
     log.basicConfig(level=log.DEBUG if args.verbose else log.INFO)
+    trader.ALLOW_CACHED_VALUES = 'ALLOW' if args.allow_cached else 'NEVER'
     serve(interval=5)
 
 
