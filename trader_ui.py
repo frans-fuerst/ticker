@@ -12,6 +12,10 @@ from PyQt4 import QtGui, QtCore, Qt, uic
 import qwt
 import trader
 
+HISTORY_LENGTH = 6 * 3600
+#HISTORY_LENGTH = 100
+UPDATE_INTERVAL_SEC = 1 * 60
+
 QT_COLORS = [
     QtCore.Qt.green,
     QtCore.Qt.blue,
@@ -104,7 +108,7 @@ class MarketWidget(QtGui.QWidget):
 
     def update_plot(self):
         log.debug('update trade history for %r')
-        data = trader.Api.get_trade_history(*self._market.split('_'), duration=6 * 3600)
+        data = trader.Api.get_trade_history(*self._market.split('_'), duration=HISTORY_LENGTH)
         if not data: return
         times, rates = trader.get_plot_data(data)
         self._current_rate = rates[-1]
@@ -130,27 +134,60 @@ class Trader(QtGui.QMainWindow):
             log.warning('did not find key file - only public access is possible')
             self._trader_api = None
         self._markets = {}
+        self._balances = {}
+
+        self._update_timer = QtCore.QTimer(self)
+        self._update_timer.timeout.connect(self._update_timer_timeout)
+        self._update_timer.setInterval(UPDATE_INTERVAL_SEC * 1000)
+        #self._update_timer.start()
+
+        self.pb_check.clicked.connect(self._pb_check_clicked)
+        self.pb_buy.clicked.connect(self._pb_buy_clicked)
+        self.cb_trade_curr_sell.currentIndexChanged.connect(self._cb_trade_curr_sell_currentIndexChanged)
+
+        self.show()
+        self._update_values()
+
+    def _update_timer_timeout(self):
+        try:
+            self._update_values()
+        except Exception as exc:
+            print('%r' % exc)
+
+    def _update_values(self):
+        print('_update_values')
         self._add_market('USDT_BTC')
-        self._add_market('BTC_XMR')
-        self._add_market('BTC_FLO')
+        #self._add_market('BTC_XMR')
+        #self._add_market('BTC_FLO')
         self._add_market('BTC_ETH')
         self._update_balances()
-        self.show()
+
+    def _pb_check_clicked(self):
+        self.pb_buy.setEnabled(True)
+
+    def _pb_buy_clicked(self):
+        pass
+
+    def _cb_trade_curr_sell_currentIndexChanged(self, index):
+        print(self.cb_trade_curr_sell.itemText(index))
 
     def _update_balances(self):
         if not self._trader_api:
             return
 
-        balances = self._trader_api.get_balances()
-        for c, a in balances.items():
+        self._balances = self._trader_api.get_balances()
+        self.cb_trade_curr_sell.clear()
+        for c, a in self._balances.items():
+            self.cb_trade_curr_sell.addItem(c)
             self.lst_balances.addItem('%r: %f' % (c, a))
+
 
         if not 'USDT_BTC' in self._markets:
             return
         xbt_rate = self._markets['USDT_BTC'].current_rate()
-        self.lbl_XBT_USD.setText('%.2f' % xbt_rate)
+        self.lbl_XBT_USD.setText('BTC/USD: %.2f' % xbt_rate)
         eur_price = trader.get_EUR()
-        self.lbl_XBT_EUR.setText('%.2f' % (xbt_rate * eur_price))
+        self.lbl_XBT_EUR.setText('BTC/EUR: %.2f' % (xbt_rate * eur_price))
 
     def _add_market(self, market):
         log.info('fetch info for %r', market)

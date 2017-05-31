@@ -22,11 +22,15 @@
      <layout class="QVBoxLayout" name="verticalLayout">
       <item>
        <layout class="QHBoxLayout" name="horizontalLayout_2">
-        <property name="topMargin">
-         <number>10</number>
-        </property>
         <item>
          <widget class="QLabel" name="lbl_XBT_USD">
+          <property name="font">
+           <font>
+            <pointsize>15</pointsize>
+            <weight>75</weight>
+            <bold>true</bold>
+           </font>
+          </property>
           <property name="text">
            <string>XBT/USD</string>
           </property>
@@ -34,6 +38,13 @@
         </item>
         <item>
          <widget class="QLabel" name="lbl_XBT_EUR">
+          <property name="font">
+           <font>
+            <pointsize>15</pointsize>
+            <weight>75</weight>
+            <bold>true</bold>
+           </font>
+          </property>
           <property name="text">
            <string>XBT/EUR</string>
           </property>
@@ -41,6 +52,13 @@
         </item>
         <item>
          <widget class="QLabel" name="lbl_bal_EUR">
+          <property name="font">
+           <font>
+            <pointsize>15</pointsize>
+            <weight>75</weight>
+            <bold>true</bold>
+           </font>
+          </property>
           <property name="text">
            <string>balances/EUR</string>
           </property>
@@ -58,7 +76,40 @@
        </widget>
       </item>
       <item>
-       <widget class="QPlainTextEdit" name="txt_output"/>
+       <widget class="QListWidget" name="listWidget"/>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="horizontalLayout_3">
+        <property name="topMargin">
+         <number>10</number>
+        </property>
+        <item>
+         <widget class="QLineEdit" name="le_trade_amount"/>
+        </item>
+        <item>
+         <widget class="QComboBox" name="cb_trade_curr_sell"/>
+        </item>
+        <item>
+         <widget class="QComboBox" name="cb_trade_curr_buy"/>
+        </item>
+        <item>
+         <widget class="QPushButton" name="pb_check">
+          <property name="text">
+           <string>check</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="pb_buy">
+          <property name="enabled">
+           <bool>false</bool>
+          </property>
+          <property name="text">
+           <string>buy!</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
       </item>
      </layout>
     </item>
