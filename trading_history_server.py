@@ -52,6 +52,7 @@ def serve(interval):
                     print('%s_%s' % (p, s))
                     trader.Api.get_trade_history(p, s, 5*60*60)
             log.info('all coins fetched')
+            break
         except trader.ServerError as exc:
             log.warning('Could not communicate with Trading server (%r)', exc)
         time.sleep(interval)
