@@ -185,6 +185,9 @@ class Api:
         return {c: translate_ticker(v)
                 for c, v in Api._run_public_command('returnTicker').items()}
 
+    def get_markets(self):
+        return self._markets
+
     def get_balances(self) -> dict:
         return {c: float(v)
                 for c, v in self._run_private_command('returnBalances').items()
@@ -208,7 +211,7 @@ class Api:
             markets[c1].add(c2)
         return markets
 
-    def place_order(self, *, sell: tuple, buy: str, fire=False):
+    def place_order(self, *, sell: tuple, buy: str, fire=False) -> bool:
         amount, what_to_sell = sell
         print('try to sell %f %r for %r' % (amount, what_to_sell, buy))
 
@@ -252,6 +255,8 @@ class Api:
                 {'currencyPair': market,
                  'rate': target_rate,
                  'amount': target_amount}))
+        else:
+            return True
 
 
 def get_price(ticker, currency, coin):

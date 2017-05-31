@@ -6,7 +6,6 @@ import sys
 import os
 import signal
 import ast
-import time
 import argparse
 import threading
 import queue
@@ -16,13 +15,19 @@ import qwt
 
 import trader
 
+GRAPH_HEIGHT = 180
 HISTORY_LENGTH = 6 * 3600
 #HISTORY_LENGTH = 100
-UPDATE_INTERVAL_SEC = 1 * 60
+UPDATE_INTERVAL_SEC = 3 * 60
 MARKETS = (
-#        'BTC_XMR',
-#        'BTC_FLO',
-#        'BTC_ETH',
+    # 'BTC_XMR',   # Monero
+    # 'BTC_FLO',   # Florin
+    # 'BTC_ETH',   # Ethereum
+    # 'BTC_XRP',   # Ripple
+    # 'BTC_ETC',   # Ethereum Classic
+    # 'BTC_LTC',   # Litecoin
+    # 'BTC_DASH',  # Dash
+    # 'BTC_GNT',   # Golem
 )
 
 QT_COLORS = [
@@ -160,14 +165,15 @@ class Trader(QtGui.QMainWindow):
         self._update_timer.setInterval(UPDATE_INTERVAL_SEC * 1000)
         self._update_timer.start()
 
-        self._worker_thread = threading.Thread(target=self._worker_thread)
+        self._worker_thread = threading.Thread(target=self._worker_thread_fn)
         self._tasks = queue.Queue()
         self._worker_thread.start()
 
         self.pb_check.clicked.connect(self._pb_check_clicked)
         self.pb_buy.clicked.connect(self._pb_buy_clicked)
         self.cb_trade_curr_sell.currentIndexChanged.connect(self._cb_trade_curr_sell_currentIndexChanged)
-
+        self.cb_trade_curr_buy.currentIndexChanged.connect(self._cb_trade_curr_buy_currentIndexChanged)
+        self.le_trade_amount.textChanged.connect(self._le_trade_amount_textChanged)
         self._add_market('USDT_BTC')
         for m in MARKETS:
             self._add_market(m)
@@ -178,7 +184,7 @@ class Trader(QtGui.QMainWindow):
         self.show()
         self._update_values()
 
-    def _worker_thread(self):
+    def _worker_thread_fn(self):
         while True:
             f = self._tasks.get()
             log.info('got new task..')
@@ -198,35 +204,69 @@ class Trader(QtGui.QMainWindow):
         self._tasks.put(self._threadsafe_update_balances)
 
     def _pb_check_clicked(self):
-        self.pb_buy.setEnabled(True)
+        self.pb_buy.setEnabled(False)
+        try:
+            self._place_order(check=True)
+            self.pb_buy.setEnabled(True)
+        except ValueError as exc:
+            log.error('cannot place order: %s', exc)
 
     def _pb_buy_clicked(self):
-        pass
+        try:
+            self._place_order(check=False)
+        except ValueError as exc:
+            log.error('cannot place order: %s', exc)
+        self._threadsafe_update_balances()
+
+    def _place_order(self, *, check: bool):
+        sell = (float(self.le_trade_amount.text()),
+                self.cb_trade_curr_sell.currentText())
+        buy = self.cb_trade_curr_buy.currentText()
+        log.info('place order: sell=%r buy=%r check=%r', sell, buy, check)
+        self._trader_api.place_order(sell=sell, buy=buy, fire=not check)
+
+    def _le_trade_amount_textChanged(self):
+        self.pb_buy.setEnabled(False)
 
     def _cb_trade_curr_sell_currentIndexChanged(self, index):
+        #self.pb_buy.setEnabled(False)
         selected = self.cb_trade_curr_sell.itemText(index)
         if not selected: return
         log.info('selected currency to sell: %r', selected)
         self.le_trade_amount.setText(str(self._balances[selected]))
 
+    def _cb_trade_curr_buy_currentIndexChanged(self, index):
+        #self.pb_buy.setEnabled(False)
+        selected = self.cb_trade_curr_buy.itemText(index)
+        if not selected: return
+
     def _threadsafe_update_balances(self):
         if not self._trader_api: return
         balances = self._trader_api.get_balances()
         eur_price = trader.get_EUR()
+        orders = self._trader_api.get_open_orders()
         QtCore.QMetaObject.invokeMethod(
             self, "_set_balance_data",
             QtCore.Qt.QueuedConnection,
             QtCore.Q_ARG(dict, balances),
-            QtCore.Q_ARG(float, eur_price))
+            QtCore.Q_ARG(float, eur_price),
+            QtCore.Q_ARG(dict, orders),
+        )
 
-    @QtCore.pyqtSlot(dict, float)
-    def _set_balance_data(self, balances, eur_price):
+    @QtCore.pyqtSlot(dict, float, dict)
+    def _set_balance_data(self, balances, eur_price, orders):
         self._balances = balances
         self.cb_trade_curr_sell.clear()
+        self.cb_trade_curr_buy.clear()
         self.lst_balances.clear()
-        for c, a in self._balances.items():
+        self.lst_orders.clear()
+
+        for c, a in sorted(self._balances.items()):
             self.cb_trade_curr_sell.addItem(c)
             self.lst_balances.addItem('%r: %f' % (c, a))
+
+        for c in sorted(self._trader_api.get_markets()['BTC']):
+            self.cb_trade_curr_buy.addItem(c)
 
         if not 'USDT_BTC' in self._markets: return
 
@@ -234,11 +274,15 @@ class Trader(QtGui.QMainWindow):
         self.lbl_XBT_USD.setText('BTC/USD: %.2f' % xbt_rate)
         self.lbl_XBT_EUR.setText('BTC/EUR: %.2f' % (xbt_rate * eur_price))
 
+        log.info('orders: %r', orders)
+        for o in orders.items():
+            self.lst_orders.addItem('%r' % o)
+
     def _add_market(self, market):
         if market in self._markets: return
         log.info('add market: %r', market)
         new_item = QtGui.QListWidgetItem()
-        new_item.setSizeHint(QtCore.QSize(110, 210))
+        new_item.setSizeHint(QtCore.QSize(110, GRAPH_HEIGHT))
         new_item.setFlags(QtCore.Qt.ItemIsEnabled)
         new_market = MarketWidget(market, self._trader_api)
         self.lst_markets.addItem(new_item)
