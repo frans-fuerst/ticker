@@ -11,7 +11,6 @@ import hmac
 import hashlib
 import logging as log
 import time
-import functools
 
 ALLOW_CACHED_VALUES = 'ALLOW'  # 'NEVER', 'FORCE'
 
@@ -20,27 +19,27 @@ class ServerError(RuntimeError):
     pass
 
 
-def clip(value, minv, maxv):
-    return min(max(value, minv), maxv)
-
-
 def get_rates(data):
     return tuple(x['total'] / x['amount'] for x in data)
 
 
 def clean(data, factor):
     # todo: must be weighted avarage
-    av = functools.reduce(lambda x, y: x + y, data) / len(data)
-    c = 0
+#    av = functools.reduce(lambda x, y: x + y, data) / len(data)
     r = 1 / factor
-    for d in data:
-        if not r < d/av < factor:
-#            print(d, d/av)
-            c += 1
-    print('av', av, factor, len(data), c)
-#    return tuple(d if r < d / av < factor else av for d in data)
-#    return tuple(clip(d, 0.0170, 0.02) for d in data)
-    return data
+
+#    c = 0
+#    for d in data:
+#        if not r < d/av < factor:
+#            c += 1
+#    print('av', av, factor, len(data), c)
+
+    result = []
+    mvalue = data[0]
+    for e in data:
+        mvalue = e if r < e / mvalue < factor else mvalue
+        result.append(mvalue)
+    return result
 
 
 def get_maverage(data, factor):
@@ -55,12 +54,16 @@ def get_maverage(data, factor):
 def get_plot_data(data):
     # return sum(x['total'] / x['amount'] for x in data) / len(data)
 
-    for i in range(50):
-        ydata = clean(get_rates(data), 1.0 + i / 10)
+    #for i in range(50):
+    #    ydata = clean(get_rates(data), 1.0 + i / 10)
+
+    ydata = get_rates(data)
+
+    ydata = clean(ydata, 1.01)
+
     ydata = get_maverage(ydata, 0.02)
 
     xdata = [time.mktime(x['date'].timetuple()) for x in data]
-
                           #  [(x['rate'] * 100) for x in data])
                                   #[pre(x) for x in data])
     return xdata, ydata

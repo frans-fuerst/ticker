@@ -6,7 +6,6 @@ import sys
 import os
 import signal
 import ast
-import time
 import argparse
 import logging as log
 from PyQt4 import QtGui, QtCore, Qt, uic
@@ -78,11 +77,6 @@ class DataPlot(qwt.QwtPlot):
     def set_data(self, datax, datay):
         self.x, self.y = datax, datay
 
-    def add_value(self, value):
-        self.y = concatenate((self.y[1:], self.y[:1]), 1)
-        self.y[-1] = value
-        self.redraw()
-
     def redraw(self):
         self.curveR.setData(self.x, self.y)
         self.replot()
@@ -147,7 +141,7 @@ class Trader(QtGui.QMainWindow):
 
 def show_gui():
     app = QtGui.QApplication(sys.argv)
-    ex = Trader()
+    _ = Trader()
     signal.signal(signal.SIGINT, signal.SIG_DFL)
     return app.exec_()
 
