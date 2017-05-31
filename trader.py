@@ -59,9 +59,9 @@ def get_plot_data(data):
     #for i in range(50):
     #    ydata = clean(get_rates(data), 1.0 + i / 10)
 
-    ydata = get_rates(data)
+    ydata = list(get_rates(data))
 
-    ydata = clean(ydata, 1.01)
+    ydata = clean(ydata, 1.05)
 
     ydata = get_maverage(ydata, 0.02)
 

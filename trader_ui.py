@@ -18,7 +18,7 @@ import trader
 
 HISTORY_LENGTH = 6 * 3600
 #HISTORY_LENGTH = 100
-UPDATE_INTERVAL_SEC = 5 * 60
+UPDATE_INTERVAL_SEC = 1 * 60
 MARKETS = (
 #        'BTC_XMR',
 #        'BTC_FLO',
@@ -112,7 +112,6 @@ class MarketWidget(QtGui.QWidget):
         #self.tbl_values.verticalHeader().setDefaultSectionSize(32)
         #self.tbl_values.verticalHeader().setResizeMode(
             #QtGui.QHeaderView.Interactive)
-#        self.update_plot()
 
     def threadsafe_update_plot(self):
         log.info('update trade history for %r', self._market)
@@ -130,6 +129,8 @@ class MarketWidget(QtGui.QWidget):
         self._current_rate = rates[-1]
         self.lbl_current.setText('%.2fh / %f' % ((times[-1] - times[0]) / 3600, self._current_rate))
         self._plot.set_data(times, rates)
+        mins, maxs = min(rates), max(rates)
+        self._plot.setAxisScale(qwt.QwtPlot.yLeft, min(mins, maxs * 0.9), maxs)
         self._plot.redraw()
 
     def current_rate(self):
