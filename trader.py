@@ -74,6 +74,7 @@ def get_unique_name(data: dict) -> str:
     return ('.'.join('%s=%s' % (k, 'xxx' if k in {'start', 'nonce'} else v)
                       for k, v in sorted(data.items()))
             .replace(',', '_')
+            .replace('/', '_')
             .translate(dict.fromkeys(map(ord, u"\"'[]{}() "))))
 
 
@@ -99,32 +100,32 @@ def translate_ticker(val):
             'percentChange': float(val['percentChange']),
             'quoteVolume': float(val['quoteVolume'])}
 
+def _fetch_http(request, request_data):
+    assert ALLOW_CACHED_VALUES in {'NEVER', 'ALLOW', 'FORCE'}
+    log.debug('caching policy: %r', ALLOW_CACHED_VALUES)
+    filename = get_unique_name(request_data) + '.cache'
+    if ALLOW_CACHED_VALUES in {'NEVER', 'ALLOW'}:
+        try:
+            result = urlopen(request).read()
+            with open(filename, 'wb') as file:
+                file.write(result)
+            return result.decode()
+        except urllib.error.URLError as exc:
+            if ALLOW_CACHED_VALUES == 'NEVER':
+                raise ServerError(repr(exc)) from exc
+    try:
+        with open(filename, 'rb') as file:
+            log.warning('use chached values for %r', request)
+            return file.read().decode()
+    except FileNotFoundError as exc:
+        raise ServerError(repr(exc)) from exc
+
 
 class Api:
     def __init__(self, key, secret):
         self._key = key.encode()
         self._secret = secret.encode()
         self._markets = self.get_markets()
-
-    @staticmethod
-    def _fetch(request, request_data):
-        assert ALLOW_CACHED_VALUES in {'NEVER', 'ALLOW', 'FORCE'}
-        filename = get_unique_name(request_data) + '.cache'
-        if ALLOW_CACHED_VALUES in {'NEVER', 'ALLOW'}:
-            try:
-                result = urlopen(request).read()
-                with open(filename, 'wb') as file:
-                    file.write(result)
-                return result
-            except urllib.error.URLError as exc:
-                if ALLOW_CACHED_VALUES == 'NEVER':
-                    raise ServerError(str(exc)) from exc
-        try:
-            with open(filename, 'rb') as file:
-                log.warning('use chached values for %r', request)
-                return file.read()
-        except FileNotFoundError as exc:
-            raise ServerError(str(exc)) from exc
 
     def _run_private_command(self, command, req=None):
         request_data = {**(req if req else {}),
@@ -139,7 +140,7 @@ class Api:
             'https://poloniex.com/tradingApi',
             data=post_data,
             headers={'Sign': sign, 'Key': self._key})
-        result = json.loads(Api._fetch(request, request_data).decode())
+        result = json.loads(_fetch_http(request, request_data))
         if 'error' in result:
             raise RuntimeError(result['error'])
         return result
@@ -150,7 +151,7 @@ class Api:
                         **{'command': command}}
         post_data = '&'.join(['%s=%s' % (k, v) for k, v in request_data.items()])
         request = 'https://poloniex.com/public?' + post_data
-        result = json.loads(Api._fetch(request, request_data).decode())
+        result = json.loads(_fetch_http(request, request_data))
         if 'error' in result:
             raise RuntimeError(result['error'])
         return result
@@ -256,7 +257,8 @@ def get_price(ticker, currency, coin):
 
 def get_EUR():
     def get_bla():
-        return json.loads(urlopen('http://api.fixer.io/latest').read().decode())
+        return json.loads(_fetch_http(
+            'https://api.fixer.io/latest', {'url':'api.fixer.io/latest'}))
     return 1.0 / float(get_bla()['rates']['USD'])
 
 
