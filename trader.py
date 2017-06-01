@@ -2,6 +2,7 @@
 
 __all__ = ['translate_trade']
 
+import os
 import json
 import urllib
 from urllib.request import urlopen, Request
@@ -61,7 +62,7 @@ def get_plot_data(data):
 
     ydata = list(get_rates(data))
 
-    ydata = clean(ydata, 1.05)
+    ydata = clean(ydata, 1.07)
 
     ydata = get_maverage(ydata, 0.02)
 
@@ -106,7 +107,8 @@ def translate_ticker(val):
 def _fetch_http(request, request_data):
     assert ALLOW_CACHED_VALUES in {'NEVER', 'ALLOW', 'FORCE'}
     log.debug('caching policy: %r', ALLOW_CACHED_VALUES)
-    filename = get_unique_name(request_data) + '.cache'
+    os.makedirs('cache', exist_ok=True)
+    filename = os.path.join('cache', get_unique_name(request_data) + '.cache')
     if ALLOW_CACHED_VALUES in {'NEVER', 'ALLOW'}:
         try:
             result = urlopen(request).read()
