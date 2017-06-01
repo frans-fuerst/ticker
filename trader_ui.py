@@ -76,6 +76,11 @@ class DataPlot(qwt.QwtPlot):
         self.enableAxis(qwt.QwtPlot.yLeft, True)
         # self.setAxisTitle(qwt.QwtPlot.xBottom, "Time (seconds)")
         # self.setAxisTitle(qwt.QwtPlot.yLeft, "Values")
+        scaleWidget = self.axisWidget(qwt.QwtPlot.yLeft)
+        #scaleWidget.setFixedWidth(200)
+        #d = scaleWidget.scaleDraw()
+        #d.minimumExtent
+        scaleWidget.scaleDraw().setMinimumExtent(100)
 
         self.redraw()
 
@@ -188,10 +193,12 @@ class Trader(QtGui.QMainWindow):
         while True:
             f = self._tasks.get()
             log.info('got new task..')
-            try:
-                f()
-            except Exception as exc:
-                log.error('Exception in worker thread %r', exc)
+            while True:
+                try:
+                    f()
+                    break
+                except Exception as exc:
+                    log.error('Exception in worker thread %r', exc)
 
     def _update_timer_timeout(self):
         log.info('Update timeout')
@@ -208,13 +215,13 @@ class Trader(QtGui.QMainWindow):
         try:
             self._place_order(check=True)
             self.pb_buy.setEnabled(True)
-        except ValueError as exc:
+        except (RuntimeError, ValueError) as exc:
             log.error('cannot place order: %s', exc)
 
     def _pb_buy_clicked(self):
         try:
             self._place_order(check=False)
-        except ValueError as exc:
+        except (RuntimeError, ValueError) as exc:
             log.error('cannot place order: %s', exc)
         self._threadsafe_update_balances()
 
@@ -263,7 +270,13 @@ class Trader(QtGui.QMainWindow):
 
         for c, a in sorted(self._balances.items()):
             self.cb_trade_curr_sell.addItem(c)
-            self.lst_balances.addItem('%r: %f' % (c, a))
+            m = 'BTC_%s' % c
+            btc_rate = (
+                1. if c == 'BTC' else
+                self._markets[m].current_rate() if m in self._markets else
+                0.)
+            self.lst_balances.addItem('%r: %f  ~BTC%f' % (
+                c, a, a * btc_rate))
 
         for c in sorted(self._trader_api.get_markets()['BTC']):
             self.cb_trade_curr_buy.addItem(c)
@@ -276,7 +289,7 @@ class Trader(QtGui.QMainWindow):
 
         log.info('orders: %r', orders)
         for o in orders.items():
-            self.lst_orders.addItem('%r' % o)
+            self.lst_orders.addItem(str(o))
 
     def _add_market(self, market):
         if market in self._markets: return
