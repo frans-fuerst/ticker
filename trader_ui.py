@@ -268,25 +268,32 @@ class Trader(QtGui.QMainWindow):
         self.lst_balances.clear()
         self.lst_orders.clear()
 
+        xbt_usd_rate = self._markets['USDT_BTC'].current_rate()
+        btc_total = 0.
+        eur_total = 0.
         for c, a in sorted(self._balances.items()):
             self.cb_trade_curr_sell.addItem(c)
-            m = 'BTC_%s' % c
-            btc_rate = (
+            _m = 'BTC_%s' % c
+            _btc_rate = (
                 1. if c == 'BTC' else
-                self._markets[m].current_rate() if m in self._markets else
+                self._markets[_m].current_rate() if _m in self._markets else
                 0.)
-            self.lst_balances.addItem('%r: %f  ~BTC%f' % (
-                c, a, a * btc_rate))
+            _add_btc = a * _btc_rate
+            _add_eur = _add_btc * xbt_usd_rate * eur_price
+            btc_total += _add_btc
+            eur_total += _add_eur
+            self.lst_balances.addItem('%r: %8.4f  ~BTC %7.2f  ~EUR %7.2f' % (
+                c, a, _add_btc, _add_eur ))
 
         for c in sorted(self._trader_api.get_markets()['BTC']):
             self.cb_trade_curr_buy.addItem(c)
 
         if not 'USDT_BTC' in self._markets: return
 
-        xbt_rate = self._markets['USDT_BTC'].current_rate()
-        self.lbl_XBT_USD.setText('BTC/USD: %.2f' % xbt_rate)
-        self.lbl_XBT_EUR.setText('BTC/EUR: %.2f' % (xbt_rate * eur_price))
-
+        self.lbl_XBT_USD.setText('%.2f' % xbt_usd_rate)
+        self.lbl_XBT_EUR.setText('%.2f' % (xbt_usd_rate * eur_price))
+        self.lbl_bal_BTC.setText('%.4f' % (btc_total))
+        self.lbl_bal_EUR.setText('%.4f' % (eur_total))
         log.info('orders: %r', orders)
         for o in orders.items():
             self.lst_orders.addItem(str(o))
