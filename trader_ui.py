@@ -20,14 +20,14 @@ HISTORY_LENGTH = 6 * 3600
 #HISTORY_LENGTH = 100
 UPDATE_INTERVAL_SEC = 3 * 60
 MARKETS = (
-    # 'BTC_XMR',   # Monero
-    # 'BTC_FLO',   # Florin
-    # 'BTC_ETH',   # Ethereum
-    # 'BTC_XRP',   # Ripple
-    # 'BTC_ETC',   # Ethereum Classic
-    # 'BTC_LTC',   # Litecoin
-    # 'BTC_DASH',  # Dash
-    # 'BTC_GNT',   # Golem
+    'BTC_XMR',   # Monero
+    'BTC_FLO',   # Florin
+    'BTC_ETH',   # Ethereum
+    'BTC_XRP',   # Ripple
+    'BTC_ETC',   # Ethereum Classic
+    'BTC_LTC',   # Litecoin
+    'BTC_DASH',  # Dash
+    'BTC_GNT',   # Golem
 )
 
 QT_COLORS = [
@@ -157,13 +157,13 @@ class Trader(QtGui.QMainWindow):
         uic.loadUi(os.path.join(self._directory, 'trader.ui'), self)
         try:
             self._trader_api = trader.Api(**ast.literal_eval(open('k').read()))
+            log.info('initialize personal balances..')
         except FileNotFoundError:
             log.warning('did not find key file - only public access is possible')
             self._trader_api = None
-        self._markets = {}
 
-        log.info('initialize personal balances..')
-        self._balances = self._trader_api.get_balances()
+        self._balances = self._fetch_balances()
+        self._markets = {}
 
         self._update_timer = QtCore.QTimer(self)
         self._update_timer.timeout.connect(self._update_timer_timeout)
@@ -199,6 +199,10 @@ class Trader(QtGui.QMainWindow):
                     break
                 except Exception as exc:
                     log.error('Exception in worker thread %r', exc)
+
+    def _fetch_balances(self):
+        if not self._trader_api: return {}
+        return self._trader_api.get_balances()
 
     def _update_timer_timeout(self):
         log.info('Update timeout')
