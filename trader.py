@@ -213,7 +213,7 @@ class Api:
             markets[c1].add(c2)
         return markets
 
-    def place_order(self, *, sell: tuple, buy: str, fire=False) -> bool:
+    def place_order(self, *, sell: tuple, buy: str, rate=None, fire=False) -> float:
         amount, what_to_sell = sell
         print('try to sell %f %r for %r' % (amount, what_to_sell, buy))
 
@@ -241,13 +241,17 @@ class Api:
             raise ValueError(
                 'No market available for %r -> %r' % (
                     what_to_sell, buy))
-        current_rate, minr, maxr = self.get_current_rate(market)
-        # [todo]: here we can raise/lower by about 0.5%
-        target_rate = current_rate
-        target_amount = amount if action == 'sell' else amount / target_rate
+        if rate is None:
+            current_rate, minr, maxr = self.get_current_rate(market)
+            # [todo]: here we can raise/lower by about 0.5%
+            target_rate = current_rate
+            target_amount = amount if action == 'sell' else amount / target_rate
 
-        print('> current rate is %f(%f-%f), target is %f' % (
-            current_rate, minr, maxr, target_rate))
+            print('> current rate is %f(%f-%f), target is %f' % (
+                current_rate, minr, maxr, target_rate))
+        else:
+            target_rate = rate
+
         print('> %r currencyPair=%s, rate=%f, amount=%f' % (
             action, market, target_rate, target_amount))
         if fire:
@@ -258,7 +262,7 @@ class Api:
                  'rate': target_rate,
                  'amount': target_amount}))
         else:
-            return True
+            return target_rate
 
 
 def get_price(ticker, currency, coin):

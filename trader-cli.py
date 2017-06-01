@@ -45,6 +45,7 @@ def main():
         api.place_order(
             sell=(float(args.arg1), args.arg2),
             buy=args.arg3,
+            rate=None,
             fire=args.arg4=='fire')
         print('your orders:', api.get_open_orders())
     elif args.cmd == 'gui':

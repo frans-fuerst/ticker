@@ -238,7 +238,8 @@ class Trader(QtGui.QMainWindow):
     def _pb_check_clicked(self):
         self.pb_buy.setEnabled(False)
         try:
-            self._place_order(check=True)
+            suggested_rate = self._place_order(check=True)
+            self.le_rate.setText(str(suggested_rate))
             self.pb_buy.setEnabled(True)
         except (RuntimeError, ValueError) as exc:
             log.error('cannot place order: %s', exc)
@@ -255,7 +256,9 @@ class Trader(QtGui.QMainWindow):
                 self.cb_trade_curr_sell.currentText())
         buy = self.cb_trade_curr_buy.currentText()
         log.info('place order: sell=%r buy=%r check=%r', sell, buy, check)
-        self._trader_api.place_order(sell=sell, buy=buy, fire=not check)
+        rate = None if check else float(self.le_rate.text())
+        return self._trader_api.place_order(
+            sell=sell, buy=buy, rate=rate, fire=not check)
 
     def _le_trade_amount_textChanged(self):
         self.pb_buy.setEnabled(False)
