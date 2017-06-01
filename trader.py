@@ -197,12 +197,20 @@ class Api:
 
     def get_complete_balances(self) -> dict:
         return {c: {k: float(a) for k, a in v.items()}
-                for c, v in self._run_private_command('returnCompleteBalances').items()}
+                for c, v in self._run_private_command(
+                    'returnCompleteBalances').items()}
 
     def get_open_orders(self) -> dict:
         return {c: o
-                for c, o in self._run_private_command('returnOpenOrders', {'currencyPair': 'all'}).items()
+                for c, o in self._run_private_command(
+                    'returnOpenOrders', {'currencyPair': 'all'}).items()
                 if o}
+
+    def get_order_history(self) -> dict:
+        return self._run_private_command(
+            'returnTradeHistory', {'currencyPair': 'all',
+                                   'start': 0,
+                                   'end': 9999999999})
 
     @staticmethod
     def get_markets():
@@ -245,13 +253,12 @@ class Api:
             current_rate, minr, maxr = self.get_current_rate(market)
             # [todo]: here we can raise/lower by about 0.5%
             target_rate = current_rate
-            target_amount = amount if action == 'sell' else amount / target_rate
-
             print('> current rate is %f(%f-%f), target is %f' % (
                 current_rate, minr, maxr, target_rate))
         else:
             target_rate = rate
 
+        target_amount = amount if action == 'sell' else amount / target_rate
         print('> %r currencyPair=%s, rate=%f, amount=%f' % (
             action, market, target_rate, target_amount))
         if fire:
@@ -303,6 +310,7 @@ def get_detailed_balances(api):
 
     print('USD %.2f / EUR %.2f' % (cash_usd, cash_usd * eur_price))
     pprint(api.get_open_orders())
+    pprint(api.get_order_history())
 
 
 def sum_trades(history: list) -> tuple:
