@@ -16,7 +16,7 @@ import qwt
 
 import trader
 
-GRAPH_HEIGHT = 180
+GRAPH_HEIGHT = 140
 HISTORY_LENGTH = 6 * 3600
 #HISTORY_LENGTH = 100
 UPDATE_INTERVAL_SEC = 3 * 60
@@ -27,8 +27,9 @@ MARKETS = (
     'BTC_XRP',   # Ripple
     'BTC_ETC',   # Ethereum Classic
     'BTC_LTC',   # Litecoin
-    'BTC_DASH',  # Dash
-    'BTC_GNT',   # Golem
+#    'BTC_DASH',  # Dash
+#    'BTC_GNT',   # Golem
+    'BTC_BURST',   # Burst
 )
 
 QT_COLORS = [
@@ -151,7 +152,20 @@ class MarketWidget(QtGui.QWidget):
 class Trader(QtGui.QMainWindow):
 
     def __init__(self):
+        class LogHandler(log.Handler):
+            def __init__(self, parent):
+                super().__init__()
+                self._parent = parent
+
+            def emit(self, record):
+                QtCore.QMetaObject.invokeMethod(
+                    self._parent, "_log_message",
+                    QtCore.Qt.QueuedConnection,
+                    QtCore.Q_ARG(dict, record.__dict__),
+                )
+
         QtGui.QMainWindow.__init__(self)
+        log.getLogger().addHandler(LogHandler(self))
 
         self.setMouseTracking(True)
         self._directory = os.path.dirname(os.path.realpath(__file__))
@@ -197,6 +211,11 @@ class Trader(QtGui.QMainWindow):
         self.show()
         self._update_values()
 
+    @QtCore.pyqtSlot(dict)
+    def _log_message(self, record):
+        self.lst_log.addItem(record['message'])
+        self.lst_log.scrollToBottom()
+
     def closeEvent(self, event):
         self._tasks.put(None)
         self._worker_thread.join()
@@ -204,8 +223,9 @@ class Trader(QtGui.QMainWindow):
     def _worker_thread_fn(self):
         while True:
             f = self._tasks.get()
-            if f is None: return
-            log.info('got new task..')
+            if f is None:
+                return
+            log.debug('got new task..')
             while True:
                 try:
                     f()
