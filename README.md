@@ -9,4 +9,5 @@ ToDo
 - [ ] abort thread
 - [ ] crawl trading history back in time
 - [ ] move cache data to ./cache/
+- [ ] trade rate angeben
 
