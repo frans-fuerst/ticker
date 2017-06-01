@@ -197,9 +197,14 @@ class Trader(QtGui.QMainWindow):
         self.show()
         self._update_values()
 
+    def closeEvent(self, event):
+        self._tasks.put(None)
+        self._worker_thread.join()
+
     def _worker_thread_fn(self):
         while True:
             f = self._tasks.get()
+            if f is None: return
             log.info('got new task..')
             while True:
                 try:
