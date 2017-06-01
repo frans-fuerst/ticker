@@ -9,6 +9,7 @@ import ast
 import argparse
 import threading
 import queue
+import time
 import logging as log
 from PyQt4 import QtGui, QtCore, Qt, uic
 import qwt
@@ -164,11 +165,17 @@ class Trader(QtGui.QMainWindow):
 
         self._balances = self._fetch_balances()
         self._markets = {}
+        self._last_update = None
 
         self._update_timer = QtCore.QTimer(self)
         self._update_timer.timeout.connect(self._update_timer_timeout)
         self._update_timer.setInterval(UPDATE_INTERVAL_SEC * 1000)
         self._update_timer.start()
+
+        time_info_timer = QtCore.QTimer(self)
+        time_info_timer.timeout.connect(self._time_info_timer_timeout)
+        time_info_timer.setInterval(1000)
+        time_info_timer.start()
 
         self._worker_thread = threading.Thread(target=self._worker_thread_fn)
         self._tasks = queue.Queue()
@@ -179,6 +186,7 @@ class Trader(QtGui.QMainWindow):
         self.cb_trade_curr_sell.currentIndexChanged.connect(self._cb_trade_curr_sell_currentIndexChanged)
         self.cb_trade_curr_buy.currentIndexChanged.connect(self._cb_trade_curr_buy_currentIndexChanged)
         self.le_trade_amount.textChanged.connect(self._le_trade_amount_textChanged)
+
         self._add_market('USDT_BTC')
         for m in MARKETS:
             self._add_market(m)
@@ -208,11 +216,19 @@ class Trader(QtGui.QMainWindow):
         log.info('Update timeout')
         self._update_values()
 
+    def _time_info_timer_timeout(self):
+        if not self._last_update: return
+        self.lbl_last_update.setText('%d' % (time.time() - self._last_update))
+
     def _update_values(self):
         log.info('Trigger update')
         for _, w in self._markets.items():
             self._tasks.put(w.threadsafe_update_plot)
         self._tasks.put(self._threadsafe_update_balances)
+        def update_time():
+            self._last_update = time.time()
+        self._tasks.put(update_time)
+
 
     def _pb_check_clicked(self):
         self.pb_buy.setEnabled(False)
