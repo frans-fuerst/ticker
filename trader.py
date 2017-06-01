@@ -62,7 +62,7 @@ def get_plot_data(data):
 
     ydata = list(get_rates(data))
 
-    ydata = clean(ydata, 1.07)
+    ydata = clean(ydata, 1.1)
 
     ydata = get_maverage(ydata, 0.02)
 
