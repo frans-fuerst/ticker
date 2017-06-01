@@ -305,6 +305,7 @@ class Trader(QtGui.QMainWindow):
             self.lst_balances.addItem('%r: %8.4f  ~BTC %7.2f  ~EUR %7.2f' % (
                 c, a, _add_btc, _add_eur ))
 
+        self.cb_trade_curr_buy.addItem('BTC')
         for c in sorted(self._trader_api.get_markets()['BTC']):
             self.cb_trade_curr_buy.addItem(c)
 
