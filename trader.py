@@ -200,6 +200,10 @@ class Api:
                 for c, v in self._run_private_command(
                     'returnCompleteBalances').items()}
 
+    def cancel_order(self, order_nr) -> dict:
+        return self._run_private_command(
+            'cancelOrder', {'orderNumber': order_nr})
+
     def get_open_orders(self) -> dict:
         return {c: o
                 for c, o in self._run_private_command(

@@ -202,8 +202,10 @@ class Trader(QtGui.QMainWindow):
         self.cb_trade_curr_buy.currentIndexChanged.connect(self._cb_trade_curr_buy_currentIndexChanged)
         self.le_trade_amount.textChanged.connect(self._le_trade_amount_textChanged)
 
+        # sort by time
         self.tbl_order_history.sortItems(0, QtCore.Qt.DescendingOrder)
-        self.tbl_balances.sortItems(2, QtCore.Qt.DescendingOrder)
+        # sort by EUR value
+        self.tbl_balances.sortItems(4, QtCore.Qt.DescendingOrder)
         self.tbl_open_orders.sortItems(2, QtCore.Qt.DescendingOrder)
         self.le_suggested_rate_factor.setText(str(self._config['suggested_rate_factor']))
 
@@ -346,9 +348,10 @@ class Trader(QtGui.QMainWindow):
             btc_total += _add_btc
             eur_total += _add_eur
             self.tbl_balances.setItem(i, 0, QtGui.QTableWidgetItem('%s' % c))
-            self.tbl_balances.setItem(i, 1, QtGui.QTableWidgetItem('%10.5f' %a))
-            self.tbl_balances.setItem(i, 2, QtGui.QTableWidgetItem('%10.5f' % _add_btc))
-            self.tbl_balances.setItem(i, 3, QtGui.QTableWidgetItem('%10.5f' % _add_eur))
+            self.tbl_balances.setItem(i, 1, QtGui.QTableWidgetItem('%10.5f' % a))
+            self.tbl_balances.setItem(i, 2, QtGui.QTableWidgetItem('%10.5f' % _btc_rate))
+            self.tbl_balances.setItem(i, 3, QtGui.QTableWidgetItem('%10.5f' % _add_btc))
+            self.tbl_balances.setItem(i, 4, QtGui.QTableWidgetItem('%10.5f' % _add_eur))
             i += 1
         self.tbl_balances.setSortingEnabled(True)
 
@@ -363,10 +366,10 @@ class Trader(QtGui.QMainWindow):
         self.lbl_bal_BTC.setText('%.4f' % (btc_total))
         self.lbl_bal_EUR.setText('%.4f' % (eur_total))
 
-        self._fill_order_table(self.tbl_open_orders, orders)
+        self._fill_order_table(self.tbl_open_orders, orders, cancel_button=True)
         self._fill_order_table(self.tbl_order_history, order_history)
 
-    def _fill_order_table(self, table_widget, orders):
+    def _fill_order_table(self, table_widget, orders, cancel_button=False):
         table_widget.setSortingEnabled(False)
         table_widget.setRowCount(
             sum(len(v) for k, v in orders.items()))
@@ -380,8 +383,19 @@ class Trader(QtGui.QMainWindow):
                 table_widget.setItem(i, 4, QtGui.QTableWidgetItem(order['total']))
                 table_widget.setItem(i, 5, QtGui.QTableWidgetItem(order['rate']))
                 table_widget.setItem(i, 6, QtGui.QTableWidgetItem(order['orderNumber']))
+                if cancel_button:
+                    btn = QtGui.QPushButton('X')
+                    btn.clicked.connect(
+                        lambda: self._cancel_order(order['orderNumber']))
+                    table_widget.setCellWidget(i, 7, btn)
                 i += 1
         table_widget.setSortingEnabled(True)
+
+    def _cancel_order(self, order_nr):
+        log.info('cancel order %r', order_nr)
+        result = self._trader_api.cancel_order(order_nr)
+        self._threadsafe_update_balances()
+        log.info('result: %r', result)
 
     def _add_market(self, market):
         if market in self._markets: return

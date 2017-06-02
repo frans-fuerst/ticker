@@ -283,6 +283,11 @@
         </column>
         <column>
          <property name="text">
+          <string>BTC rate</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
           <string>~BTC</string>
          </property>
         </column>
@@ -344,6 +349,11 @@
         <column>
          <property name="text">
           <string>orderNr</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>cancel</string>
          </property>
         </column>
        </widget>
