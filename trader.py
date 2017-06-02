@@ -130,7 +130,7 @@ class Api:
     def __init__(self, key, secret):
         self._key = key.encode()
         self._secret = secret.encode()
-        self._markets = self.get_markets()
+        self._markets = self.get_markets(True)
 
     def _run_private_command(self, command, req=None):
         request_data = {**(req if req else {}),
@@ -187,9 +187,6 @@ class Api:
         return {c: translate_ticker(v)
                 for c, v in Api._run_public_command('returnTicker').items()}
 
-    def get_markets(self):
-        return self._markets
-
     def get_balances(self) -> dict:
         return {c: float(v)
                 for c, v in self._run_private_command('returnBalances').items()
@@ -217,13 +214,18 @@ class Api:
                                    'end': 9999999999})
 
     @staticmethod
-    def get_markets():
+    def fetch_markets():
         markets = {}
         for m in Api.get_ticker():
             c1, c2 = m.split('_')
             if not c1 in markets: markets[c1] = set()
             markets[c1].add(c2)
         return markets
+
+    def get_markets(self, refetch=False):
+        if refetch or not self._markets:
+            self._markets = self.fetch_markets()
+        return self._markets
 
     def place_order(self, *,
                     sell: tuple, buy: str,

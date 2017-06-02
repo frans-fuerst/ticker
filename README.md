@@ -5,8 +5,6 @@ trading experiment
 ToDo
 ====
 
-- [ ] abort trade
-
 - [ ] crawl trading history back in time
 - [ ] faster balances update
 - [ ] edit graph parameters
@@ -15,6 +13,8 @@ ToDo
 - [ ] filter trading target
 - [ ] show trading history
 
+- [x] inform on new markets
+- [x] abort trade
 - [x] rate multiplicator
 - [x] balances -> list
 - [x] open trades -> list

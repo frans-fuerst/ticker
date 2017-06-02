@@ -10,6 +10,7 @@ import argparse
 import threading
 import queue
 import time
+import json
 import logging as log
 from PyQt4 import QtGui, QtCore, Qt, uic
 import qwt
@@ -177,6 +178,23 @@ class Trader(QtGui.QMainWindow):
             log.warning('did not find key file - only public access is possible')
             self._trader_api = None
 
+        def check_new_markets():
+            current_markets = set(trader.Api.get_ticker().keys())
+            try:
+                last_markets = set(json.loads(open('last_markets').read()))
+            except FileNotFoundError:
+                last_markets = set()
+            if current_markets - last_markets:
+                if QtGui.QMessageBox.question(
+                        self, 'New Markets!!!11!!',
+                        "Be sure to buy coins of %r\n\nSave markets?" % (
+                            current_markets - last_markets),
+                        QtGui.QMessageBox.Ok, QtGui.QMessageBox.No
+                        ) == QtGui.QMessageBox.Ok:
+                    open('last_markets', 'w').write(json.dumps(list(current_markets)))
+
+        check_new_markets()
+
         self._balances = self._fetch_balances()
         self._markets = {}
         self._last_update = None
@@ -225,8 +243,10 @@ class Trader(QtGui.QMainWindow):
         self.lst_log.scrollToBottom()
 
     def closeEvent(self, event):
+        log.info('got close event, wait for worker to finish..')
         self._tasks.put(None)
         self._worker_thread.join()
+        log.info('bye bye!')
 
     def _worker_thread_fn(self):
         while True:

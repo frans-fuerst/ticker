@@ -2,6 +2,7 @@
 *.wpu
 *.cache
 config
+last_markets
 k
 
 # Byte-compiled / optimized / DLL files
