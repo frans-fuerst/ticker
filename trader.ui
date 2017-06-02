@@ -262,12 +262,35 @@
        </widget>
       </item>
       <item>
-       <widget class="QListWidget" name="lst_balances">
+       <widget class="QTableWidget" name="tbl_balances">
         <property name="font">
          <font>
           <family>Courier 10 Pitch</family>
          </font>
         </property>
+        <property name="sortingEnabled">
+         <bool>true</bool>
+        </property>
+        <column>
+         <property name="text">
+          <string>currency</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>amount</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>~BTC</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>~EUR</string>
+         </property>
+        </column>
        </widget>
       </item>
       <item>
@@ -278,12 +301,51 @@
        </widget>
       </item>
       <item>
-       <widget class="QListWidget" name="lst_orders">
+       <widget class="QTableWidget" name="tbl_open_orders">
         <property name="font">
          <font>
           <family>Courier 10 Pitch</family>
+          <pointsize>9</pointsize>
          </font>
         </property>
+        <property name="sortingEnabled">
+         <bool>true</bool>
+        </property>
+        <column>
+         <property name="text">
+          <string>date</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>market</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>type</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>amount</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>prim cost</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>rate</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>orderNr</string>
+         </property>
+        </column>
        </widget>
       </item>
       <item>
@@ -294,17 +356,68 @@
        </widget>
       </item>
       <item>
-       <widget class="QTableWidget" name="tbl_order_history"/>
+       <widget class="QTableWidget" name="tbl_order_history">
+        <property name="font">
+         <font>
+          <family>Courier 10 Pitch</family>
+          <pointsize>9</pointsize>
+         </font>
+        </property>
+        <property name="sortingEnabled">
+         <bool>true</bool>
+        </property>
+        <property name="columnCount">
+         <number>7</number>
+        </property>
+        <attribute name="verticalHeaderVisible">
+         <bool>true</bool>
+        </attribute>
+        <column>
+         <property name="text">
+          <string>date</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>market</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>type</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>amount</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>prim cost</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>rate</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>orderNr</string>
+         </property>
+        </column>
+       </widget>
       </item>
       <item>
        <layout class="QGridLayout" name="gridLayout_2">
         <property name="topMargin">
          <number>0</number>
         </property>
-        <item row="2" column="3">
+        <item row="2" column="5">
          <widget class="QComboBox" name="cb_trade_curr_buy"/>
         </item>
-        <item row="3" column="2" colspan="2">
+        <item row="4" column="4" colspan="2">
          <widget class="QPushButton" name="pb_buy">
           <property name="enabled">
            <bool>false</bool>
@@ -314,30 +427,20 @@
           </property>
          </widget>
         </item>
-        <item row="1" column="1">
-         <widget class="QLineEdit" name="le_trade_amount">
-          <property name="sizePolicy">
-           <sizepolicy hsizetype="Maximum" vsizetype="Fixed">
-            <horstretch>0</horstretch>
-            <verstretch>0</verstretch>
-           </sizepolicy>
-          </property>
-         </widget>
-        </item>
-        <item row="2" column="1">
+        <item row="2" column="3">
          <widget class="QLineEdit" name="le_rate">
           <property name="sizePolicy">
-           <sizepolicy hsizetype="Maximum" vsizetype="Fixed">
+           <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
             <horstretch>0</horstretch>
             <verstretch>0</verstretch>
            </sizepolicy>
           </property>
          </widget>
         </item>
-        <item row="1" column="3">
+        <item row="1" column="5">
          <widget class="QComboBox" name="cb_trade_curr_sell"/>
         </item>
-        <item row="1" column="2">
+        <item row="1" column="4">
          <widget class="QLabel" name="label_7">
           <property name="text">
            <string>sell what:</string>
@@ -347,11 +450,11 @@
         <item row="2" column="0">
          <widget class="QLabel" name="label_6">
           <property name="text">
-           <string>rate:</string>
+           <string>speed factor:</string>
           </property>
          </widget>
         </item>
-        <item row="2" column="2">
+        <item row="2" column="4">
          <widget class="QLabel" name="label_8">
           <property name="text">
            <string>buy what</string>
@@ -365,10 +468,34 @@
           </property>
          </widget>
         </item>
-        <item row="3" column="0" colspan="2">
+        <item row="4" column="0" colspan="4">
          <widget class="QPushButton" name="pb_check">
           <property name="text">
            <string>check</string>
+          </property>
+         </widget>
+        </item>
+        <item row="2" column="1">
+         <widget class="QLineEdit" name="le_suggested_rate_factor">
+          <property name="text">
+           <string>1.0</string>
+          </property>
+         </widget>
+        </item>
+        <item row="2" column="2">
+         <widget class="QLabel" name="label_12">
+          <property name="text">
+           <string>rate:</string>
+          </property>
+         </widget>
+        </item>
+        <item row="1" column="1" colspan="3">
+         <widget class="QLineEdit" name="le_trade_amount">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
           </property>
          </widget>
         </item>

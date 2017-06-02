@@ -221,7 +221,9 @@ class Api:
             markets[c1].add(c2)
         return markets
 
-    def place_order(self, *, sell: tuple, buy: str, rate=None, fire=False) -> float:
+    def place_order(self, *,
+                    sell: tuple, buy: str,
+                    rate=None, suggestion_factor=1.0, fire=False) -> float:
         amount, what_to_sell = sell
         print('try to sell %f %r for %r' % (amount, what_to_sell, buy))
 
@@ -251,16 +253,17 @@ class Api:
                     what_to_sell, buy))
         if rate is None:
             current_rate, minr, maxr = self.get_current_rate(market)
-            # [todo]: here we can raise/lower by about 0.5%
-            target_rate = current_rate
-            print('> current rate is %f(%f-%f), target is %f' % (
-                current_rate, minr, maxr, target_rate))
+            target_rate = (
+                current_rate * suggestion_factor if action == 'buy' else
+                current_rate / suggestion_factor)
+            log.info('> current rate is %f(%f-%f), target is %f',
+                     current_rate, minr, maxr, target_rate)
         else:
             target_rate = rate
 
         target_amount = amount if action == 'sell' else amount / target_rate
-        print('> %r currencyPair=%s, rate=%f, amount=%f' % (
-            action, market, target_rate, target_amount))
+        log.info('> %r currencyPair=%s, rate=%f, amount=%f',
+                 action, market, target_rate, target_amount)
         if fire:
             print('> send trade command..')
             pprint(self._run_private_command(
