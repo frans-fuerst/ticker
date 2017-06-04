@@ -12,6 +12,7 @@ ToDo
 - [ ] write balance history
 - [ ] filter trading target
 - [ ] show trading history
+- [ ] track order / trades
 
 - [x] inform on new markets
 - [x] abort trade

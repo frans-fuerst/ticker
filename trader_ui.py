@@ -123,6 +123,7 @@ class MarketWidget(QtGui.QWidget):
             QtCore.Qt.QueuedConnection,
             QtCore.Q_ARG(list, times),
             QtCore.Q_ARG(list, rates))
+        log.info('done')
 
     @QtCore.pyqtSlot(list, list)
     def _set_data(self, times, rates):
@@ -214,7 +215,7 @@ class Trader(QtGui.QMainWindow):
         self._worker_thread.start()
 
         self.pb_check.clicked.connect(self._pb_check_clicked)
-        self.pb_buy.clicked.connect(self._pb_buy_clicked)
+        self.pb_place_order.clicked.connect(self._pb_place_order_clicked)
         self.pb_refresh.clicked.connect(self._pb_refresh_clicked)
         self.cb_trade_curr_sell.currentIndexChanged.connect(self._cb_trade_curr_sell_currentIndexChanged)
         self.cb_trade_curr_buy.currentIndexChanged.connect(self._cb_trade_curr_buy_currentIndexChanged)
@@ -252,6 +253,7 @@ class Trader(QtGui.QMainWindow):
         while True:
             f = self._tasks.get()
             if f is None:
+                log.info('exit _worker_thread_fn()')
                 return
             log.debug('got new task..')
             while True:
@@ -286,44 +288,68 @@ class Trader(QtGui.QMainWindow):
         self._update_values()
 
     def _pb_check_clicked(self):
-        self.pb_buy.setEnabled(False)
-        try:
-            suggested_rate = self._place_order(check=True)
-            self.le_rate.setText(str(suggested_rate))
-            self.pb_buy.setEnabled(True)
-        except (RuntimeError, ValueError) as exc:
-            log.error('cannot place order: %s', exc)
-
-    def _pb_buy_clicked(self):
-        try:
-            self._place_order(check=False)
-        except (RuntimeError, ValueError) as exc:
-            log.error('cannot place order: %s', exc)
-        self._threadsafe_update_balances()
-
-    def _place_order(self, *, check: bool):
+        self.pb_place_order.setEnabled(False)
         sell = (float(self.le_trade_amount.text()),
                 self.cb_trade_curr_sell.currentText())
         buy = self.cb_trade_curr_buy.currentText()
-        factor = float(self.le_suggested_rate_factor.text())
-        log.info('place order: sell=%r buy=%r check=%r', sell, buy, check)
-        rate = None if check else float(self.le_rate.text())
-        return self._trader_api.place_order(
-            sell=sell, buy=buy, rate=rate,
-            suggestion_factor=factor, fire=not check)
+        speed_factor = float(self.le_suggested_rate_factor.text())
+        log.info('create order from: sell=%r buy=%r speed_factor=%f',
+                 sell, buy, speed_factor)
+        try:
+            order = self._trader_api.check_order(
+                sell=sell, buy=buy,
+                suggestion_factor=speed_factor)
+        except (RuntimeError, ValueError) as exc:
+            log.error('cannot place order: %s', exc)
+
+        self.le_order_market.setText(order['market'])
+        self.le_order_amount.setText(str(order['amount']))
+        self.le_order_rate.setText(str(order['rate']))
+        self.cb_order_action.setCurrentIndex(
+            self.cb_order_action.findText(order['action']))
+        self.pb_place_order.setEnabled(True)
+
+    def _pb_place_order_clicked(self):
+        def save_order(order):
+            if not order: return
+            try:
+                orders = json.loads(open('orders').read())
+            except FileNotFoundError:
+                orders = []
+            orders.append(result)
+            open('orders', 'w').write(json.dumps(orders))
+
+        order = {'market': self.le_order_market.text(),
+                 'action': self.cb_order_action.currentText(),
+                 'rate': float(self.le_order_rate.text()),
+                 'amount': float(self.le_order_amount.text())}
+
+        log.info('place order: %r', order)
+
+        speed_factor = float(self.le_suggested_rate_factor.text())
+
+        try:
+            result = self._trader_api.place_order(**order)
+            result.update({'speed_factor': speed_factor,
+                           'time': time.time()})
+            save_order(result)
+        except (RuntimeError, ValueError) as exc:
+            log.error('cannot place order: %s', exc)
+
+        self._threadsafe_update_balances()
 
     def _le_trade_amount_textChanged(self):
-        self.pb_buy.setEnabled(False)
+        self.pb_place_order.setEnabled(False)
 
     def _cb_trade_curr_sell_currentIndexChanged(self, index):
-        #self.pb_buy.setEnabled(False)
+        #self.pb_place_order.setEnabled(False)
         selected = self.cb_trade_curr_sell.itemText(index)
         if not selected: return
         log.info('selected currency to sell: %r', selected)
         self.le_trade_amount.setText(str(self._balances[selected]))
 
     def _cb_trade_curr_buy_currentIndexChanged(self, index):
-        #self.pb_buy.setEnabled(False)
+        #self.pb_place_order.setEnabled(False)
         selected = self.cb_trade_curr_buy.itemText(index)
         if not selected: return
 
@@ -403,19 +429,23 @@ class Trader(QtGui.QMainWindow):
                 table_widget.setItem(i, 4, QtGui.QTableWidgetItem(order['total']))
                 table_widget.setItem(i, 5, QtGui.QTableWidgetItem(order['rate']))
                 table_widget.setItem(i, 6, QtGui.QTableWidgetItem(order['orderNumber']))
+                on = order['orderNumber']
                 if cancel_button:
                     btn = QtGui.QPushButton('X')
                     btn.clicked.connect(
-                        lambda: self._cancel_order(order['orderNumber']))
+                        lambda: self._cancel_order(on))
                     table_widget.setCellWidget(i, 7, btn)
                 i += 1
         table_widget.setSortingEnabled(True)
 
     def _cancel_order(self, order_nr):
-        log.info('cancel order %r', order_nr)
-        result = self._trader_api.cancel_order(order_nr)
-        self._threadsafe_update_balances()
-        log.info('result: %r', result)
+        try:
+            log.info('cancel order %r', order_nr)
+            result = self._trader_api.cancel_order(order_nr)
+            self._threadsafe_update_balances()
+            log.info('result: %r', result)
+        except Exception as exc:
+            log.error('Exception while cancelling: %r', exc)
 
     def _add_market(self, market):
         if market in self._markets: return
@@ -446,9 +476,27 @@ def get_args() -> dict:
 
 
 def main():
+    def handle_sigusr1(signal: int, frame) -> None:
+        """ interrupt running process, and provide a python prompt for
+            interactive debugging.
+            see http://stackoverflow.com/questions/132058
+               "showing-the-stack-trace-from-a-running-python-application"
+        """
+        import traceback
+        log.info('signal SIGUSR1 received, print stack trace')
+        for f in traceback.format_stack(frame):
+            for l in f.splitlines():
+                log.info(l)
+
     args = get_args()
+
     log.basicConfig(level=log.INFO)
+
     trader.ALLOW_CACHED_VALUES = 'ALLOW' if args.allow_cached else 'NEVER'
+
+    log.info('or run `kill -10 %d` to show stack trace', os.getpid())
+    signal.signal(signal.SIGUSR1, handle_sigusr1)
+
     sys.exit(show_gui())
 
 

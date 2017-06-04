@@ -3,6 +3,7 @@
 *.cache
 config
 last_markets
+orders
 k
 
 # Byte-compiled / optimized / DLL files

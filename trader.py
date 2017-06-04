@@ -227,24 +227,24 @@ class Api:
             self._markets = self.fetch_markets()
         return self._markets
 
-    def place_order(self, *,
+    def check_order(self, *,
                     sell: tuple, buy: str,
-                    rate=None, suggestion_factor=1.0, fire=False) -> float:
+                    suggestion_factor: float) -> float:
         amount, what_to_sell = sell
-        print('try to sell %f %r for %r' % (amount, what_to_sell, buy))
+        log.info('try to sell %f %r for %r', amount, what_to_sell, buy)# todo: correct
 
         def check_balance():
             balances = self.get_balances()
             if not what_to_sell in balances:
                 raise ValueError(
                     'You do not have %r to sell' % what_to_sell)
-            print('> you have %f %r' % (balances[what_to_sell], what_to_sell))
+            log.info('> you have %f %r' % (balances[what_to_sell], what_to_sell))
             if balances[what_to_sell] < amount:
                 raise ValueError(
                     'You do not have enough %r to sell (just %f)' % (
                         what_to_sell, balances[what_to_sell]))
 
-        check_balance()
+        check_balance()  # todo: cached balance?
         if (what_to_sell in self._markets and
                 buy in self._markets[what_to_sell]):
             market = what_to_sell + '_' + buy
@@ -257,28 +257,35 @@ class Api:
             raise ValueError(
                 'No market available for %r -> %r' % (
                     what_to_sell, buy))
-        if rate is None:
-            current_rate, minr, maxr = self.get_current_rate(market)
-            target_rate = (
-                current_rate * suggestion_factor if action == 'buy' else
-                current_rate / suggestion_factor)
-            log.info('> current rate is %f(%f-%f), target is %f',
-                     current_rate, minr, maxr, target_rate)
-        else:
-            target_rate = rate
 
-        target_amount = amount if action == 'sell' else amount / target_rate
-        log.info('> %r currencyPair=%s, rate=%f, amount=%f',
-                 action, market, target_rate, target_amount)
-        if fire:
-            print('> send trade command..')
-            pprint(self._run_private_command(
-                action,
-                {'currencyPair': market,
-                 'rate': target_rate,
-                 'amount': target_amount}))
-        else:
-            return target_rate
+        # [todo]: make sure this is correct!!!
+        current_rate, minr, maxr = self.get_current_rate(market)
+
+        target_rate = (
+            current_rate * suggestion_factor if action == 'buy' else
+            current_rate / suggestion_factor)
+
+        log.info('> current rate is %f(%f..%f), target is %f',
+                 current_rate, minr, maxr, target_rate)
+
+        return {'market': market,
+                'action': action,
+                'rate': target_rate,
+                'amount': (amount if action == 'sell' else
+                           amount / target_rate)}
+
+    def place_order(self, *,
+                    market: str,
+                    action: str,
+                    rate: float,
+                    amount: float) -> dict:
+        assert action in {'buy', 'sell'}
+        log.info('place order: %r %r %f %f', market, action, rate, amount)
+        return self._run_private_command(
+            action,
+            {'currencyPair': market,
+             'rate': rate,
+             'amount': amount})
 
 
 def get_price(ticker, currency, coin):
