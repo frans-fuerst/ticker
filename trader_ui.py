@@ -17,26 +17,6 @@ import qwt
 
 import trader
 
-QT_COLORS = [
-    QtCore.Qt.green,
-    QtCore.Qt.blue,
-    QtCore.Qt.red,
-    QtCore.Qt.cyan,
-    QtCore.Qt.magenta,
-    QtCore.Qt.darkBlue,
-    QtCore.Qt.darkCyan,
-    QtCore.Qt.darkGray,
-    QtCore.Qt.darkGreen,
-    QtCore.Qt.darkMagenta,
-    QtCore.Qt.darkRed,
-    QtCore.Qt.darkYellow,
-    QtCore.Qt.lightGray,
-    QtCore.Qt.gray,
-    QtCore.Qt.white,
-    QtCore.Qt.black,
-    QtCore.Qt.yellow]
-
-
 class DataPlot(qwt.QwtPlot):
 
     def __init__(self, *args):
@@ -81,6 +61,9 @@ class DataPlot(qwt.QwtPlot):
     def set_data(self, datax, datay):
         self._curve_rates.setData(datax, datay)
 
+    def set_marker(self, value):
+        self._marker.setYValue(value)
+
     def redraw(self):
         self.replot()
 
@@ -98,6 +81,7 @@ class MarketWidget(QtGui.QWidget):
         self.lbl_market.setText(market)
         self._plot = DataPlot()
         self._history_length = 100
+        self._marker_value = None
         self.layout().addWidget(self._plot)
 
     def threadsafe_update_plot(self):
@@ -106,7 +90,7 @@ class MarketWidget(QtGui.QWidget):
             *self._market.split('_'),
             duration=self._history_length)
         if not data: return
-        times, rates = trader.get_plot_data(data, 0.99)
+        times, rates = trader.get_plot_data(data, 0.995)
         QtCore.QMetaObject.invokeMethod(
             self, "_set_data",
             QtCore.Qt.QueuedConnection,
@@ -117,11 +101,22 @@ class MarketWidget(QtGui.QWidget):
     @QtCore.pyqtSlot(list, list)
     def _set_data(self, times, rates):
         self._current_rate = rates[-1]
-        self.lbl_current.setText('%.2fh / %f' % ((times[-1] - times[0]) / 3600, self._current_rate))
+        self.lbl_current.setText('%.2fh / %f' % (
+            (times[-1] - times[0]) / 3600, self._current_rate))
         self._plot.set_data(times, rates)
         mins, maxs = min(rates), max(rates)
+        if self._marker_value:
+            maxs = max(maxs, self._marker_value)
+            mins = min(mins, self._marker_value)
         self._plot.setAxisScale(qwt.QwtPlot.yLeft, min(mins, maxs * 0.9), maxs)
+        self.redraw()
+
+    def redraw(self):
         self._plot.redraw()
+
+    def set_marker(self, value):
+        self._marker_value = value
+        self._plot.set_marker(self._marker_value)
 
     def current_rate(self):
         return self._current_rate
@@ -218,7 +213,7 @@ class Trader(QtGui.QMainWindow):
         self.le_suggested_rate_factor.setText(str(self._config['suggested_rate_factor']))
 
         self._add_market('USDT_BTC')
-        for m, n in self._config['markets']:
+        for m in self._config['markets']:
             self._add_market(m)
 
         for m in self._balances:
@@ -407,6 +402,14 @@ class Trader(QtGui.QMainWindow):
 
         self._fill_order_table(self.tbl_open_orders, orders, cancel_button=True)
         self._fill_order_table(self.tbl_order_history, order_history)
+        for m, history in order_history.items():
+            for h in history:
+                if h['type'] == 'buy' and m in self._markets:
+                    print(m,  float(h['total']) / float(h['amount']))
+                    self._markets[m].set_marker(
+                        float(h['total']) / float(h['amount']))
+                    self._markets[m].redraw()
+                    break
 
     def _fill_order_table(self, table_widget, orders, cancel_button=False):
         table_widget.setSortingEnabled(False)
