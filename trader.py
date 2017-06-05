@@ -38,6 +38,47 @@ def vema(totals, amounts, a):
     smooth_amounts = ema(amounts, a)
     return [t / c for t, c in zip(smooth_totals, smooth_amounts)]
 
+class TradeHistory:
+    def __init__(self, market):
+        self._market = market
+        self._hdata = []
+
+    def fetch_next(self):
+        log.info('update trade history for %r', self._market)
+        current_time = time.time()
+        if not self._hdata:
+            start = current_time - 3600
+            end = 9999999999
+        elif current_time - self.last_time() > 30.:
+            start = self.last_time()
+            end = 9999999999
+        elif current_time - self.first_time() < 12 * 3600:
+            start = self.first_time() - 3600
+            end = self.first_time()
+        else:
+            return
+        self._attach_data(Api.get_trade_history(
+            *self._market.split('_'), start, end))
+
+    def first_time(self):
+        if not self._hdata: return 0.
+        return self._hdata[0]['time']
+
+    def last_time(self):
+        if not self._hdata: return 0.
+        return self._hdata[-1]['time']
+
+    def _attach_data(self, data):
+        if not data: return
+
+    def get_plot_data(self, data, ema_factor=0.995):
+        totals = [e['total'] for e in self._hdata]
+        amounts = [e['amount'] for e in self._hdata]
+        times = [time.mktime(e['date'].timetuple()) - time.time() for e in self._hdata]
+        rates_vema = vema(totals, amounts, ema_factor)
+        return times, rates_vema
+
+
 
 def get_plot_data(data, ema_factor):
     totals = [e['total'] for e in data]
@@ -139,20 +180,23 @@ class Api:
         return result
 
     @staticmethod
-    def _get_trade_history(currency_pair, duration=None) -> dict:
+    def _get_trade_history(currency_pair, start=None, stop=None) -> dict:
         req = {'currencyPair': currency_pair}
-        if duration:
-            req.update({'start': '%d' % (time.time() - duration),
-                        'end': '9999999999'})
+        if start:
+            req.update({'start': start if stop else time.time() - start,
+                        'end': stop if stop else 9999999999})
         return list(reversed([translate_trade(t)
                 for t in Api._run_public_command(
                     'returnTradeHistory', req)]))
 
     @staticmethod
-    def get_trade_history(primary, coin, duration) -> dict:
+    def get_trade_history(primary, coin, start, stop=None) -> dict:
         if primary == coin:
             return []
-        return Api._get_trade_history(primary + '_' + coin, duration)
+        return (Api._get_trade_history(
+                    primary + '_' + coin, start, stop) if stop else
+                Api._get_trade_history(
+                    primary + '_' + coin, time.time() - start, 9999999999))
 
     @staticmethod
     def get_current_rate(market):
