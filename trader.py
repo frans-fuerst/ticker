@@ -19,39 +19,20 @@ ALLOW_CACHED_VALUES = 'ALLOW'  # 'NEVER', 'FORCE'
 class ServerError(RuntimeError):
     pass
 
-
-def get_rates(data):
-    return tuple(x['total'] / x['amount'] for x in data)
-
-
-def clean(data, factor):
-    if not data: return data
-    # todo: must be weighted avarage
-#    av = functools.reduce(lambda x, y: x + y, data) / len(data)
-    r = 1 / factor
-
-#    c = 0
-#    for d in data:
-#        if not r < d/av < factor:
-#            c += 1
-#    print('av', av, factor, len(data), c)
-
+def ema(data, a):
+    n = data[0]
     result = []
-    mvalue = data[0]
-    for e in data:
-        mvalue = e if mvalue == 0.0 or r < e / mvalue < factor else mvalue
-        result.append(mvalue)
-    return result
-
-
-def get_maverage(data, factor):
-    if not data: return data
-    maverage = data[0]
-    result = []
+    an = 1 - a
     for x in data:
-        maverage = (1 - factor) * maverage + (factor) * x
-        result.append(maverage)
+        n = a * n + an * x
+        result.append(n)
     return result
+
+
+def vema(totals, amounts, a):
+    smooth_totals = ema(totals, a)
+    smooth_amounts = ema(amounts, a)
+    return [t / c for t, c in zip(smooth_totals, smooth_amounts)]
 
 
 def get_plot_data(data):
@@ -59,17 +40,13 @@ def get_plot_data(data):
 
     #for i in range(50):
     #    ydata = clean(get_rates(data), 1.0 + i / 10)
+    totals = [e['total'] for e in data]
+    amounts = [e['amount'] for e in data]
+    times = [time.mktime(e['date'].timetuple()) - time.time() for e in data]
 
-    ydata = list(get_rates(data))
+    rates_vema = vema(totals, amounts, 0.98)
 
-    ydata = clean(ydata, 1.1)
-
-    ydata = get_maverage(ydata, 0.02)
-
-    xdata = [time.mktime(x['date'].timetuple()) - time.time() for x in data]
-                          #  [(x['rate'] * 100) for x in data])
-                                  #[pre(x) for x in data])
-    return xdata, ydata
+    return times, rates_vema
 
 
 def get_unique_name(data: dict) -> str:
@@ -238,7 +215,7 @@ class Api:
             if not what_to_sell in balances:
                 raise ValueError(
                     'You do not have %r to sell' % what_to_sell)
-            log.info('> you have %f %r' % (balances[what_to_sell], what_to_sell))
+            log.info('> you have %f %r', balances[what_to_sell], what_to_sell)
             if balances[what_to_sell] < amount:
                 raise ValueError(
                     'You do not have enough %r to sell (just %f)' % (
