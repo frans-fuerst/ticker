@@ -42,37 +42,32 @@ class DataPlot(qwt.QwtPlot):
     def __init__(self, *args):
         qwt.QwtPlot.__init__(self, *args)
 
-        self.setCanvasBackground(Qt.Qt.green)
+        #self.setCanvasBackground(Qt.Qt.green)
         self.alignScales()
 
-        self.x = [1, 2, 3]
-        self.y = [1.0, 2.0, 3.0]
+        self._curve_rates = qwt.QwtPlotCurve()
+        self._curve_rates.attach(self)
 
-        self.curveR = qwt.QwtPlotCurve("Data Moving Right")
-        self.curveR.attach(self)
+        self._curve_rates.setPen(Qt.QPen(Qt.Qt.red))
 
-        self.curveR.setPen(Qt.QPen(Qt.Qt.red))
-
-        mY = qwt.QwtPlotMarker()
-        mY.setLabelAlignment(Qt.Qt.AlignRight | Qt.Qt.AlignTop)
-        mY.setLineStyle(qwt.QwtPlotMarker.HLine)
-        mY.setYValue(0.0)
-        mY.attach(self)
+        self._marker = qwt.QwtPlotMarker()
+        self._marker.setLabelAlignment(Qt.Qt.AlignRight | Qt.Qt.AlignTop)
+        self._marker.setLineStyle(qwt.QwtPlotMarker.HLine)
+        self._marker.setYValue(0.0)
+        self._marker.attach(self)
 
         self.enableAxis(qwt.QwtPlot.xBottom, False)
         self.enableAxis(qwt.QwtPlot.yLeft, True)
         # self.setAxisTitle(qwt.QwtPlot.xBottom, "Time (seconds)")
         # self.setAxisTitle(qwt.QwtPlot.yLeft, "Values")
-        scaleWidget = self.axisWidget(qwt.QwtPlot.yLeft)
-        #scaleWidget.setFixedWidth(200)
-        #d = scaleWidget.scaleDraw()
-        #d.minimumExtent
-        scaleWidget.scaleDraw().setMinimumExtent(100)
 
         self.redraw()
 
     def alignScales(self):
         self.canvas().setFrameStyle(Qt.QFrame.Box | Qt.QFrame.Plain)
+        scaleWidget = self.axisWidget(qwt.QwtPlot.yLeft)
+        scaleWidget.scaleDraw().setMinimumExtent(80)
+
         self.canvas().setLineWidth(1)
         for i in range(qwt.QwtPlot.axisCnt):
             scaleWidget = self.axisWidget(i)
@@ -84,10 +79,9 @@ class DataPlot(qwt.QwtPlot):
                     qwt.QwtAbstractScaleDraw.Backbone, False)
 
     def set_data(self, datax, datay):
-        self.x, self.y = datax, datay
+        self._curve_rates.setData(datax, datay)
 
     def redraw(self):
-        self.curveR.setData(self.x, self.y)
         self.replot()
 
 
@@ -105,11 +99,6 @@ class MarketWidget(QtGui.QWidget):
         self._plot = DataPlot()
         self._history_length = 100
         self.layout().addWidget(self._plot)
-        #self.tbl_values.verticalHeader().setFixedWidth(160)
-        #self.tbl_values.verticalHeader().setResizeMode(QtGui.QHeaderView.Fixed)
-        #self.tbl_values.verticalHeader().setDefaultSectionSize(32)
-        #self.tbl_values.verticalHeader().setResizeMode(
-            #QtGui.QHeaderView.Interactive)
 
     def threadsafe_update_plot(self):
         log.info('update trade history for %r', self._market)
@@ -117,7 +106,7 @@ class MarketWidget(QtGui.QWidget):
             *self._market.split('_'),
             duration=self._history_length)
         if not data: return
-        times, rates = trader.get_plot_data(data)
+        times, rates = trader.get_plot_data(data, 0.99)
         QtCore.QMetaObject.invokeMethod(
             self, "_set_data",
             QtCore.Qt.QueuedConnection,
@@ -164,8 +153,8 @@ class Trader(QtGui.QMainWindow):
                         'update_interval_sec': 180,
                         'suggested_rate_factor': 1.0,
                         'markets': (
-                            'BTC_ETC',   # Ethereum Classic
-                            'BTC_XMR',   # Monero
+                            ('BTC_ETC', 'Ethereum Classic'),
+                            ('BTC_XMR', 'Monero'),
                         )}
         try:
             self._config.update(ast.literal_eval(open('config').read()))
@@ -228,12 +217,13 @@ class Trader(QtGui.QMainWindow):
         self.tbl_open_orders.sortItems(2, QtCore.Qt.DescendingOrder)
         self.le_suggested_rate_factor.setText(str(self._config['suggested_rate_factor']))
 
-        self._add_market('USDT_BTC')
-        for m in self._config['markets']:
-            self._add_market(m)
+        self._add_market('USDT_BTC', None)
+        for m, n in self._config['markets']:
+            self._add_market(m, n)
+
         for m in self._balances:
             if m == 'BTC': continue
-            self._add_market('BTC_' + m)
+            self._add_market('BTC_' + m, None)
 
         self.show()
         self._update_values()
@@ -336,7 +326,10 @@ class Trader(QtGui.QMainWindow):
         except (RuntimeError, ValueError) as exc:
             log.error('cannot place order: %s', exc)
 
-        self._threadsafe_update_balances()
+        try:
+            self._threadsafe_update_balances()
+        except trader.ServerError as exc:
+            log.error('cannot place order: %s', exc)
 
     def _le_trade_amount_textChanged(self):
         self.pb_place_order.setEnabled(False)
@@ -437,6 +430,10 @@ class Trader(QtGui.QMainWindow):
                     table_widget.setCellWidget(i, 7, btn)
                 i += 1
         table_widget.setSortingEnabled(True)
+        for i in range(table_widget.columnCount()):
+            table_widget.horizontalHeader().setResizeMode(
+                i, QtGui.QHeaderView.ResizeToContents)
+
 
     def _cancel_order(self, order_nr):
         try:
@@ -447,7 +444,7 @@ class Trader(QtGui.QMainWindow):
         except Exception as exc:
             log.error('Exception while cancelling: %r', exc)
 
-    def _add_market(self, market):
+    def _add_market(self, market, name):
         if market in self._markets: return
         log.info('add market: %r', market)
         new_item = QtGui.QListWidgetItem()

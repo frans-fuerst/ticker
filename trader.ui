@@ -68,32 +68,6 @@
           </widget>
          </item>
          <item>
-          <widget class="QCheckBox" name="cb_clear">
-           <property name="text">
-            <string>clear outlier</string>
-           </property>
-           <property name="checked">
-            <bool>true</bool>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QLineEdit" name="le_outlier_factor">
-           <property name="sizePolicy">
-            <sizepolicy hsizetype="Maximum" vsizetype="Fixed">
-             <horstretch>0</horstretch>
-             <verstretch>0</verstretch>
-            </sizepolicy>
-           </property>
-           <property name="text">
-            <string>1.1</string>
-           </property>
-           <property name="alignment">
-            <set>Qt::AlignCenter</set>
-           </property>
-          </widget>
-         </item>
-         <item>
           <widget class="QCheckBox" name="cb_lowpass">
            <property name="text">
             <string>lowpass</string>

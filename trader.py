@@ -20,6 +20,8 @@ class ServerError(RuntimeError):
     pass
 
 def ema(data, a):
+    ''' returns eponential moving average
+    '''
     n = data[0]
     result = []
     an = 1 - a
@@ -30,21 +32,19 @@ def ema(data, a):
 
 
 def vema(totals, amounts, a):
+    ''' returns the volume weighted eponential moving average
+    '''
     smooth_totals = ema(totals, a)
     smooth_amounts = ema(amounts, a)
     return [t / c for t, c in zip(smooth_totals, smooth_amounts)]
 
 
-def get_plot_data(data):
-    # return sum(x['total'] / x['amount'] for x in data) / len(data)
-
-    #for i in range(50):
-    #    ydata = clean(get_rates(data), 1.0 + i / 10)
+def get_plot_data(data, ema_factor):
     totals = [e['total'] for e in data]
     amounts = [e['amount'] for e in data]
     times = [time.mktime(e['date'].timetuple()) - time.time() for e in data]
 
-    rates_vema = vema(totals, amounts, 0.98)
+    rates_vema = vema(totals, amounts, ema_factor)
 
     return times, rates_vema
 
