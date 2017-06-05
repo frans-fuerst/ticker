@@ -153,8 +153,8 @@ class Trader(QtGui.QMainWindow):
                         'update_interval_sec': 180,
                         'suggested_rate_factor': 1.0,
                         'markets': (
-                            ('BTC_ETC', 'Ethereum Classic'),
-                            ('BTC_XMR', 'Monero'),
+                            'BTC_ETC', # 'Ethereum Classic
+                            'BTC_XMR', #'Monero
                         )}
         try:
             self._config.update(ast.literal_eval(open('config').read()))
@@ -217,13 +217,13 @@ class Trader(QtGui.QMainWindow):
         self.tbl_open_orders.sortItems(2, QtCore.Qt.DescendingOrder)
         self.le_suggested_rate_factor.setText(str(self._config['suggested_rate_factor']))
 
-        self._add_market('USDT_BTC', None)
+        self._add_market('USDT_BTC')
         for m, n in self._config['markets']:
-            self._add_market(m, n)
+            self._add_market(m)
 
         for m in self._balances:
             if m == 'BTC': continue
-            self._add_market('BTC_' + m, None)
+            self._add_market('BTC_' + m)
 
         self.show()
         self._update_values()
@@ -444,7 +444,7 @@ class Trader(QtGui.QMainWindow):
         except Exception as exc:
             log.error('Exception while cancelling: %r', exc)
 
-    def _add_market(self, market, name):
+    def _add_market(self, market):
         if market in self._markets: return
         log.info('add market: %r', market)
         new_item = QtGui.QListWidgetItem()
