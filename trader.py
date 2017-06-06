@@ -40,16 +40,25 @@ def vema(totals, amounts, a):
 
 
 class TradeHistory:
-    def __init__(self, market):
+    def __init__(self, market, step_size_sec=3600):
         self._market = market
         self._hdata = []
+        self._step_size_sec = step_size_sec
+
+    def __str__(self):
+        return self.__repr__()
+
+    def __repr__(self):
+        return 'TradeHistory(%r, duration=%.1f, len=%d)' % (
+            self._market, self.get_duration() / 60, len(self._hdata))
 
     def fetch_next(self):
         log.info('update trade history for %r', self._market)
         current_time = time.time()
+        print(current_time - self.last_time())
         if not self._hdata:
             log.info('fetch_next: there is no data yet - fetch an hour')
-            start = current_time - 3600
+            start = current_time - self._step_size_sec
             end = MOST_RECENTLY
         elif current_time - self.last_time() > 30.:
             log.info('fetch_next: more than a couple of seconds have passed '
@@ -59,16 +68,14 @@ class TradeHistory:
         elif current_time - self.first_time() < 30 * 3600:
             log.info("fetch_next: we don't need to update recent parts of the "
                      "graph - fetch older data instead.")
-            start = self.first_time() - 3600
+            start = self.first_time() - self._step_size_sec
             end = self.first_time()
         else:
             log.info("fetch_next: no need to update anything - just exit")
             return
 
-        self._attach_data(
-            self._preprocess(
-                Api.get_trade_history(
-                    *self._market.split('_'), start, end)))
+        self._attach_data(Api.get_trade_history(
+                     *self._market.split('_'), start, end))
 
     def first_time(self):
         if not self._hdata: return 0.
@@ -78,22 +85,43 @@ class TradeHistory:
         if not self._hdata: return 0.
         return self._hdata[-1]['time']
 
-    def _preprocess(self, data):
-        return [translate_trade(e) for e in data]
+    def get_duration(self):
+        return self.last_time() - self.first_time()
 
     def _attach_data(self, data):
-        if not data: return
+        if not data:
+            log.warning('_attach_data tries to handle an empy list')
+            return
         if not self._hdata:
             self._hdata = data
+            return
+
         assert (data[0]['time'] <= self._hdata[-1]['time'] or
                 data[-1]['time'] >= self._hdata[0]['time'])
-        # if data[0]['time'] < self._hdata[0]['time']:
-        #    list1 =
+
+        def find(lst, key, value):
+            for i, dic in enumerate(lst):
+                if dic[key] == value:
+                    return i
+            return -1
+
+        print([x['tradeID'] for x in self._hdata])
+        print([x['tradeID'] for x in data])
+        #
+        #          | a   | b |   c |
+        # list1    [.........]
+        # list2          [.........]
+        list1, list2 = ((data, self._hdata)
+                        if data[0]['time'] < self._hdata[0]['time']
+                        else (self._hdata, data))
+        b1 = list1[find(list1, 'globalTradeID', list2[0]['globalTradeID'])]
+        b2 = list2[0:find(list2, 'globalTradeID', list1[-1]['globalTradeID'])]
+        #
 
     def get_plot_data(self, data, ema_factor=0.995):
         totals = [e['total'] for e in self._hdata]
         amounts = [e['amount'] for e in self._hdata]
-        times = [time.mktime(e['date'].timetuple()) - time.time() for e in self._hdata]
+        times = [e['time'] for e in self._hdata]
         rates_vema = vema(totals, amounts, ema_factor)
         return times, rates_vema
 
@@ -119,7 +147,9 @@ def get_unique_name(data: dict) -> str:
 
 
 def translate_trade(trade):
-    return {'date': datetime.strptime(trade['date'], '%Y-%m-%d %H:%M:%S'),
+    date = datetime.strptime(trade['date'], '%Y-%m-%d %H:%M:%S')
+    return {'date': date,
+            'time': time.mktime(date.timetuple()),
             'tradeID': trade['tradeID'],
             'globalTradeID': trade['globalTradeID'],
             'total': float(trade['total']),
