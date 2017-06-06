@@ -4,6 +4,7 @@ import ast
 import logging as log
 import argparse
 import trader
+import time
 from trader_ui import show_gui
 
 
@@ -51,10 +52,13 @@ def main():
     elif args.cmd == 'gui':
         show_gui()
     else:
-        h = trader.TradeHistory('BTC_XMR')
-        for i in range(50):
+        h = trader.TradeHistory('BTC_XMR', step_size_sec=60)
+        for i in range(2):
             h.fetch_next()
-            time.sleep(1)
+            print(time.time() - h.last_time())
+
+            print(h)
+            time.sleep(20)
         #api.place_order(sell=(0.001, 'BTC'), buy='FLO', fire=True)
         #api.place_order(sell=(3, 'XMR'), buy='BTC')
         #api.place_order(sell=(0.004, 'BTC'), buy='XMR')
