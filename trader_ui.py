@@ -88,7 +88,7 @@ class MarketWidget(QtGui.QWidget):
         log.info('update trade history for %r', self._market)
         data = trader.Api.get_trade_history(
             *self._market.split('_'),
-            duration=self._history_length)
+            start=self._history_length)
         if not data: return
         times, rates = trader.get_plot_data(data, 0.995)
         QtCore.QMetaObject.invokeMethod(

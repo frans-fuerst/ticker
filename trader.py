@@ -14,7 +14,7 @@ import logging as log
 import time
 
 ALLOW_CACHED_VALUES = 'ALLOW'  # 'NEVER', 'FORCE'
-
+MOST_RECENTLY = 9999999999
 
 class ServerError(RuntimeError):
     pass
@@ -38,6 +38,7 @@ def vema(totals, amounts, a):
     smooth_amounts = ema(amounts, a)
     return [t / c for t, c in zip(smooth_totals, smooth_amounts)]
 
+
 class TradeHistory:
     def __init__(self, market):
         self._market = market
@@ -47,18 +48,27 @@ class TradeHistory:
         log.info('update trade history for %r', self._market)
         current_time = time.time()
         if not self._hdata:
+            log.info('fetch_next: there is no data yet - fetch an hour')
             start = current_time - 3600
-            end = 9999999999
+            end = MOST_RECENTLY
         elif current_time - self.last_time() > 30.:
+            log.info('fetch_next: more than a couple of seconds have passed '
+                     'since last update - do an update now')
             start = self.last_time()
-            end = 9999999999
-        elif current_time - self.first_time() < 12 * 3600:
+            end = MOST_RECENTLY
+        elif current_time - self.first_time() < 30 * 3600:
+            log.info("fetch_next: we don't need to update recent parts of the "
+                     "graph - fetch older data instead.")
             start = self.first_time() - 3600
             end = self.first_time()
         else:
+            log.info("fetch_next: no need to update anything - just exit")
             return
-        self._attach_data(Api.get_trade_history(
-            *self._market.split('_'), start, end))
+
+        self._attach_data(
+            self._preprocess(
+                Api.get_trade_history(
+                    *self._market.split('_'), start, end)))
 
     def first_time(self):
         if not self._hdata: return 0.
@@ -68,8 +78,17 @@ class TradeHistory:
         if not self._hdata: return 0.
         return self._hdata[-1]['time']
 
+    def _preprocess(self, data):
+        return [translate_trade(e) for e in data]
+
     def _attach_data(self, data):
         if not data: return
+        if not self._hdata:
+            self._hdata = data
+        assert (data[0]['time'] <= self._hdata[-1]['time'] or
+                data[-1]['time'] >= self._hdata[0]['time'])
+        # if data[0]['time'] < self._hdata[0]['time']:
+        #    list1 =
 
     def get_plot_data(self, data, ema_factor=0.995):
         totals = [e['total'] for e in self._hdata]
@@ -184,7 +203,7 @@ class Api:
         req = {'currencyPair': currency_pair}
         if start:
             req.update({'start': start if stop else time.time() - start,
-                        'end': stop if stop else 9999999999})
+                        'end': stop if stop else MOST_RECENTLY})
         return list(reversed([translate_trade(t)
                 for t in Api._run_public_command(
                     'returnTradeHistory', req)]))
@@ -193,10 +212,7 @@ class Api:
     def get_trade_history(primary, coin, start, stop=None) -> dict:
         if primary == coin:
             return []
-        return (Api._get_trade_history(
-                    primary + '_' + coin, start, stop) if stop else
-                Api._get_trade_history(
-                    primary + '_' + coin, time.time() - start, 9999999999))
+        return Api._get_trade_history(primary + '_' + coin, start, stop)
 
     @staticmethod
     def get_current_rate(market):
@@ -232,7 +248,7 @@ class Api:
         return self._run_private_command(
             'returnTradeHistory', {'currencyPair': 'all',
                                    'start': 0,
-                                   'end': 9999999999})
+                                   'end': MOST_RECENTLY})
 
     @staticmethod
     def fetch_markets():

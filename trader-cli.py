@@ -51,6 +51,10 @@ def main():
     elif args.cmd == 'gui':
         show_gui()
     else:
+        h = trader.TradeHistory('BTC_XMR')
+        for i in range(50):
+            h.fetch_next()
+            time.sleep(1)
         #api.place_order(sell=(0.001, 'BTC'), buy='FLO', fire=True)
         #api.place_order(sell=(3, 'XMR'), buy='BTC')
         #api.place_order(sell=(0.004, 'BTC'), buy='XMR')
