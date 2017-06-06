@@ -149,7 +149,7 @@ def get_unique_name(data: dict) -> str:
 def translate_trade(trade):
     date = datetime.strptime(trade['date'], '%Y-%m-%d %H:%M:%S')
     return {'date': date,
-            'time': time.mktime(date.timetuple()),
+            'time': time.mktime(date.timetuple()) - time.altzone,
             'tradeID': trade['tradeID'],
             'globalTradeID': trade['globalTradeID'],
             'total': float(trade['total']),
