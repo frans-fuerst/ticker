@@ -19,14 +19,14 @@ MOST_RECENTLY = 9999999999
 class ServerError(RuntimeError):
     pass
 
-def ema(data, a):
+def ema(data, alpha):
     ''' returns eponential moving average
     '''
-    n = data[0]
+    alpha_n = 1 - alpha
     result = []
-    an = 1 - a
+    n = data[0]
     for x in data:
-        n = a * n + an * x
+        n = alpha * x + alpha_n * n
         result.append(n)
     return result
 
@@ -102,15 +102,16 @@ class TradeHistory:
             self._hdata = data
             return
 
-        # new [   ]
-        # old        [          ]
-        a,b,c,d = (data[0]['time'], self._hdata[-1]['time'],
-                   data[-1]['time'], self._hdata[0]['time'])
-        assert (not(data[0]['time'] >= self._hdata[-1]['time'] or
-                data[-1]['time'] >= self._hdata[0]['time']))
+        # check contiguousity
+        # good:    [......(.].....)
+        # bad:     [......].(.....)
+        # bad too: [......](......)
+        if (data[0]['time'] > self._hdata[-1]['time'] or
+            self._hdata[0]['time'] > data[-1]['time']):
+            raise ValueError('lists are discontiguous')
 
-        # new     [   ]
-        # old [          ]
+        # check merge contains new data
+        # bad: [..(..)..]
         assert (data[0]['time'] <= self._hdata[0]['time'] or
                 data[-1]['time'] >= self._hdata[-1]['time'])
 
@@ -128,7 +129,7 @@ class TradeHistory:
                        if data[0]['time'] < self._hdata[0]['time'] else
                        merge(self._hdata, data))
 
-    def get_plot_data(self, data, ema_factor=0.995):
+    def get_plot_data(self, data, ema_factor=0.005):
         totals = [e['total'] for e in self._hdata]
         amounts = [e['amount'] for e in self._hdata]
         times = [e['time'] for e in self._hdata]

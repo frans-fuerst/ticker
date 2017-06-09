@@ -5,6 +5,7 @@ config
 last_markets
 orders
 k
+data*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

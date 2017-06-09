@@ -54,7 +54,9 @@ def test_trade_history_attach():
     assert(h.count() == 4)
     h._attach_data(list1)
     assert(h.count() == 5)
-    h._attach_data(list4)
+
+    with pytest.raises(ValueError):
+        h._attach_data(list4)
 
     pprint(h.data())
 
