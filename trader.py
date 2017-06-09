@@ -77,6 +77,12 @@ class TradeHistory:
         self._attach_data(Api.get_trade_history(
                      *self._market.split('_'), start, end))
 
+    def count(self):
+        return len(self._hdata)
+
+    def data(self):
+        return self._hdata
+
     def first_time(self):
         if not self._hdata: return 0.
         return self._hdata[0]['time']
@@ -96,27 +102,31 @@ class TradeHistory:
             self._hdata = data
             return
 
-        assert (data[0]['time'] <= self._hdata[-1]['time'] or
-                data[-1]['time'] >= self._hdata[0]['time'])
+        # new [   ]
+        # old        [          ]
+        a,b,c,d = (data[0]['time'], self._hdata[-1]['time'],
+                   data[-1]['time'], self._hdata[0]['time'])
+        assert (not(data[0]['time'] >= self._hdata[-1]['time'] or
+                data[-1]['time'] >= self._hdata[0]['time']))
 
-        def find(lst, key, value):
-            for i, dic in enumerate(lst):
-                if dic[key] == value:
-                    return i
-            return -1
+        # new     [   ]
+        # old [          ]
+        assert (data[0]['time'] <= self._hdata[0]['time'] or
+                data[-1]['time'] >= self._hdata[-1]['time'])
 
-        print([x['tradeID'] for x in self._hdata])
-        print([x['tradeID'] for x in data])
-        #
-        #          | a   | b |   c |
-        # list1    [.........]
-        # list2          [.........]
-        list1, list2 = ((data, self._hdata)
-                        if data[0]['time'] < self._hdata[0]['time']
-                        else (self._hdata, data))
-        b1 = list1[find(list1, 'globalTradeID', list2[0]['globalTradeID'])]
-        b2 = list2[0:find(list2, 'globalTradeID', list1[-1]['globalTradeID'])]
-        #
+        def merge(list1, list2):
+            def find(lst, key, value):
+                for i, dic in enumerate(lst):
+                    if dic[key] == value:
+                        return i
+                return -1
+            return (list1[:find(list1, 'globalTradeID',
+                                list2[0]['globalTradeID'])] +
+                    list2)
+
+        self._hdata = (merge(data, self._hdata)
+                       if data[0]['time'] < self._hdata[0]['time'] else
+                       merge(self._hdata, data))
 
     def get_plot_data(self, data, ema_factor=0.995):
         totals = [e['total'] for e in self._hdata]
