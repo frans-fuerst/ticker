@@ -5,6 +5,7 @@ __all__ = ['translate_trade']
 import os
 import json
 import urllib
+import http
 from urllib.request import urlopen, Request
 from datetime import datetime
 from pprint import pprint
@@ -44,6 +45,8 @@ class TradeHistory:
         self._market = market
         self._hdata = []
         self._step_size_sec = step_size_sec
+        self._update_threshold_sec = 60.
+        self._history_max_duration = 24 * 3600
 
     def __str__(self):
         return self.__repr__()
@@ -53,21 +56,22 @@ class TradeHistory:
             self._market, self.get_duration() / 60, len(self._hdata))
 
     def fetch_next(self):
-        log.info('update trade history for %r', self._market)
         current_time = time.time()
-        print(current_time - self.last_time())
+        log.info('update trade history for %r after %d seconds',
+                 self._market, current_time - self.last_time())
+
         if not self._hdata:
-            log.info('fetch_next: there is no data yet - fetch an hour')
+            log.debug('fetch_next: there is no data yet - fetch an hour')
             start = current_time - self._step_size_sec
             end = MOST_RECENTLY
-        elif current_time - self.last_time() > 30.:
+        elif current_time - self.last_time() > self._update_threshold_sec:
             log.info('fetch_next: more than a couple of seconds have passed '
-                     'since last update - do an update now')
+                      'since last update - do an update now')
             start = self.last_time()
             end = MOST_RECENTLY
-        elif current_time - self.first_time() < 30 * 3600:
+        elif current_time - self.first_time() < self._history_max_duration:
             log.info("fetch_next: we don't need to update recent parts of the "
-                     "graph - fetch older data instead.")
+                      "graph - fetch older data instead.")
             start = self.first_time() - self._step_size_sec
             end = self.first_time()
         else:
@@ -75,7 +79,7 @@ class TradeHistory:
             return
 
         self._attach_data(Api.get_trade_history(
-                     *self._market.split('_'), start, end))
+            *self._market.split('_'), start, end))
 
     def count(self):
         return len(self._hdata)
@@ -129,7 +133,7 @@ class TradeHistory:
                        if data[0]['time'] < self._hdata[0]['time'] else
                        merge(self._hdata, data))
 
-    def get_plot_data(self, data, ema_factor=0.005):
+    def get_plot_data(self, ema_factor=0.005):
         totals = [e['total'] for e in self._hdata]
         amounts = [e['amount'] for e in self._hdata]
         times = [e['time'] for e in self._hdata]
@@ -189,7 +193,12 @@ def _fetch_http(request, request_data):
     filename = os.path.join('cache', get_unique_name(request_data) + '.cache')
     if ALLOW_CACHED_VALUES in {'NEVER', 'ALLOW'}:
         try:
-            result = urlopen(request).read()
+            while True:
+                try:
+                    result = urlopen(request).read()
+                    break
+                except http.client.IncompleteRead as exc:
+                    log.error('exception caught in urlopen: %r', exc)
             with open(filename, 'wb') as file:
                 file.write(result)
             return result.decode()
@@ -208,7 +217,8 @@ class Api:
     def __init__(self, key, secret):
         self._key = key.encode()
         self._secret = secret.encode()
-        self._markets = self.get_markets(True)
+        self._coins = None
+        self._markets = None
 
     def _run_private_command(self, command, req=None):
         request_data = {**(req if req else {}),
@@ -292,17 +302,28 @@ class Api:
                                    'end': MOST_RECENTLY})
 
     @staticmethod
-    def fetch_markets():
-        markets = {}
-        for m in Api.get_ticker():
+    def extract_coin_data(ticker):
+        coins = {}
+        for m in ticker:
             c1, c2 = m.split('_')
-            if not c1 in markets: markets[c1] = set()
-            markets[c1].add(c2)
-        return markets
+            if not c1 in coins: coins[c1] = set()
+            coins[c1].add(c2)
+        return coins
+
+    def get_coins(self, refetch=False):
+        ''' returns
+        '''
+        if refetch or not self._coins:
+            ticker = self.get_ticker()
+            self._coins = self.extract_coin_data(ticker)
+            self._markets = ticker.keys()
+        return self._coins
 
     def get_markets(self, refetch=False):
         if refetch or not self._markets:
-            self._markets = self.fetch_markets()
+            ticker = self.get_ticker()
+            self._coins = self.extract_coin_data(ticker)
+            self._markets = ticker.keys()
         return self._markets
 
     def check_order(self, *,
@@ -323,12 +344,12 @@ class Api:
                         what_to_sell, balances[what_to_sell]))
 
         check_balance()  # todo: cached balance?
-        if (what_to_sell in self._markets and
-                buy in self._markets[what_to_sell]):
+        if (what_to_sell in self.get_coins() and
+                buy in self.get_coins()[what_to_sell]):
             market = what_to_sell + '_' + buy
             action = 'buy'
-        elif (buy in self._markets and
-                  what_to_sell in self._markets[buy]):
+        elif (buy in self.get_coins() and
+                  what_to_sell in self.get_coins()[buy]):
             market = buy + '_' + what_to_sell
             action = 'sell'
         else:

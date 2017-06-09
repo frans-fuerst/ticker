@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 
-__all__ = ['show_gui']
-
 import sys
 import os
 import signal
@@ -11,6 +9,7 @@ import threading
 import queue
 import time
 import json
+import traceback
 import logging as log
 from PyQt4 import QtGui, QtCore, Qt, uic
 import qwt
@@ -83,20 +82,20 @@ class MarketWidget(QtGui.QWidget):
         self._history_length = 100
         self._marker_value = None
         self.layout().addWidget(self._plot)
+        self._trade_history = trader.TradeHistory(market)
 
     def threadsafe_update_plot(self):
-        log.info('update trade history for %r', self._market)
-        data = trader.Api.get_trade_history(
-            *self._market.split('_'),
-            start=self._history_length)
-        if not data: return
-        times, rates = trader.get_plot_data(data, 0.995)
+        log.info('update market trades for %r', self._market)
+        try:
+            print('>> fetch')
+            self._trade_history.fetch_next()
+        finally:
+            print('<< fetch')
+        times, rates = self._trade_history.get_plot_data(0.005)
         QtCore.QMetaObject.invokeMethod(
-            self, "_set_data",
-            QtCore.Qt.QueuedConnection,
+            self, "_set_data", QtCore.Qt.QueuedConnection,
             QtCore.Q_ARG(list, times),
             QtCore.Q_ARG(list, rates))
-        log.info('done')
 
     @QtCore.pyqtSlot(list, list)
     def _set_data(self, times, rates):
@@ -143,51 +142,22 @@ class Trader(QtGui.QMainWindow):
         self.setMouseTracking(True)
         self._directory = os.path.dirname(os.path.realpath(__file__))
         uic.loadUi(os.path.join(self._directory, 'trader.ui'), self)
-        self._config = {'graph_height':   140,
-                        'history_length_h': 4,
-                        'update_interval_sec': 180,
-                        'suggested_rate_factor': 1.0,
-                        'markets': (
-                            'BTC_ETC', # 'Ethereum Classic
-                            'BTC_XMR', #'Monero
-                        )}
-        try:
-            self._config.update(ast.literal_eval(open('config').read()))
-        except FileNotFoundError:
-            log.warning("you don't have a 'config' file, use default values")
+        self._config = self._load_config('config')
 
-        try:
-            self._trader_api = trader.Api(**ast.literal_eval(open('k').read()))
-            log.info('initialize personal balances..')
-        except FileNotFoundError:
-            log.warning('did not find key file - only public access is possible')
-            self._trader_api = None
-
-        def check_new_markets():
-            current_markets = set(trader.Api.get_ticker().keys())
-            try:
-                last_markets = set(json.loads(open('last_markets').read()))
-            except FileNotFoundError:
-                last_markets = set()
-            if current_markets - last_markets:
-                if QtGui.QMessageBox.question(
-                        self, 'New Markets!!!11!!',
-                        "Be sure to buy coins of %r\n\nSave markets?" % (
-                            current_markets - last_markets),
-                        QtGui.QMessageBox.Ok, QtGui.QMessageBox.No
-                        ) == QtGui.QMessageBox.Ok:
-                    open('last_markets', 'w').write(json.dumps(list(current_markets)))
-
-        check_new_markets()
-
-        self._balances = self._fetch_balances()
+        self._trader_api = self._get_trader()
+        self._balances = None
+        self._balances_dirty = True
         self._markets = {}
+        self._order_history = None
+        self._available_markets = None
+        self._available_coins = None
         self._last_update = None
+        self._eur_price = None
 
-        update_timer = QtCore.QTimer(self)
-        update_timer.timeout.connect(self._update_timer_timeout)
-        update_timer.setInterval(self._config['update_interval_sec'] * 1000)
-        update_timer.start()
+        self._update_timer = QtCore.QTimer(self)
+        self._update_timer.timeout.connect(self._update_timer_timeout)
+        self._update_timer.setInterval(self._config['update_interval_sec'] * 1000)
+        self._update_timer.start()
 
         time_info_timer = QtCore.QTimer(self)
         time_info_timer.timeout.connect(self._time_info_timer_timeout)
@@ -216,41 +186,91 @@ class Trader(QtGui.QMainWindow):
         for m in self._config['markets']:
             self._add_market(m)
 
-        for m in self._balances:
-            if m == 'BTC': continue
-            self._add_market('BTC_' + m)
-
         self.show()
+
         self._update_values()
+
+    def _update_values(self):
+        if not self._tasks.empty():
+            log.warning("task not done yet - I'll come back later")
+            return
+
+        now = time.time()
+
+        if not self._available_markets:
+            # todo: update
+            self._tasks.put(self._threadsafe_fetch_markets)
+
+        if (self._order_history is None or
+                self._balances is None or
+                self._balances_dirty):
+            self._balances_dirty = False
+            self._tasks.put(self._threadsafe_fetch_orders)
+            self._tasks.put(self._threadsafe_fetch_balances)
+
+        for _, w in self._markets.items():
+            self._tasks.put(w.threadsafe_update_plot)
+
+        self._tasks.put(self._threadsafe_display_balances)
+
+        def update_time(begin):
+            self._last_update = time.time()
+            log.info('update took %d seconds', self._last_update - begin)
+        self._tasks.put(lambda t=now: update_time(t))
+
+    def _load_config(self, filename):
+        result = {'graph_height':   140,
+                  'history_length_h': 4,
+                  'update_interval_sec': 180,
+                  'suggested_rate_factor': 1.0,
+                  'markets': (
+                      'BTC_ETC', # 'Ethereum Classic
+                      #'BTC_XMR', #'Monero
+                  )}
+        try:
+            result.update(ast.literal_eval(open(filename).read()))
+        except FileNotFoundError:
+            log.warning("you don't have a 'config' file, use default values")
+        return result
+
+    def _get_trader(self):
+        try:
+            return trader.Api(**ast.literal_eval(open('k').read()))
+        except FileNotFoundError:
+            log.warning('did not find key file - only public access is possible')
+            return None
 
     @QtCore.pyqtSlot(dict)
     def _log_message(self, record):
         self.lst_log.addItem(record['message'])
         self.lst_log.scrollToBottom()
 
-    def closeEvent(self, event):
+    def closeEvent(self, _):
         log.info('got close event, wait for worker to finish..')
         self._tasks.put(None)
         self._worker_thread.join()
         log.info('bye bye!')
 
     def _worker_thread_fn(self):
-        while True:
-            f = self._tasks.get()
-            if f is None:
-                log.info('exit _worker_thread_fn()')
-                return
-            log.debug('got new task..')
+        try:
             while True:
-                try:
-                    f()
-                    break
-                except Exception as exc:
-                    log.error('Exception in worker thread %r', exc)
-
-    def _fetch_balances(self):
-        if not self._trader_api: return {}
-        return self._trader_api.get_balances()
+                #print('>> 1')
+                f = self._tasks.get()
+                #print('<< 1')
+                if f is None:
+                    return
+                log.debug('got new task..')
+                while True:
+                    try:
+                        print('>> 2 - %s' % f)
+                        f()
+                        print('<< 2')
+                        break
+                    except Exception as exc:
+                        traceback.print_exc()
+                        log.error('Exception in worker thread %r', exc)
+        finally:
+            log.info('exit _worker_thread_fn()')
 
     def _update_timer_timeout(self):
         log.info('Update timeout')
@@ -259,15 +279,6 @@ class Trader(QtGui.QMainWindow):
     def _time_info_timer_timeout(self):
         if not self._last_update: return
         self.lbl_last_update.setText('%d' % (time.time() - self._last_update))
-
-    def _update_values(self):
-        log.info('Trigger update')
-        for _, w in self._markets.items():
-            self._tasks.put(w.threadsafe_update_plot)
-        self._tasks.put(self._threadsafe_update_balances)
-        def update_time():
-            self._last_update = time.time()
-        self._tasks.put(update_time)
 
     def _pb_refresh_clicked(self):
         self._update_values()
@@ -322,7 +333,8 @@ class Trader(QtGui.QMainWindow):
             log.error('cannot place order: %s', exc)
 
         try:
-            self._threadsafe_update_balances()
+            self._balances_dirty = True
+            # self._tasks.put(self._threadsafe_fetch_balances)
         except trader.ServerError as exc:
             log.error('cannot place order: %s', exc)
 
@@ -341,27 +353,72 @@ class Trader(QtGui.QMainWindow):
         selected = self.cb_trade_curr_buy.itemText(index)
         if not selected: return
 
-    def _threadsafe_update_balances(self):
-        if not self._trader_api: return
-        log.info("update balances..")
-        balances = self._trader_api.get_balances()
-        eur_price = trader.get_EUR()
-        orders = self._trader_api.get_open_orders()
-        order_history = self._trader_api.get_order_history()
+    def _threadsafe_fetch_markets(self):
+        log.info('fetch ticker info..')
+        ticker = trader.Api.get_ticker()
+        coins = trader.Api.extract_coin_data(ticker)
+        markets = set(ticker.keys())
         QtCore.QMetaObject.invokeMethod(
-            self, "_set_balance_data",
-            QtCore.Qt.QueuedConnection,
-            QtCore.Q_ARG(dict, balances),
-            QtCore.Q_ARG(float, eur_price),
-            QtCore.Q_ARG(dict, orders),
-            QtCore.Q_ARG(dict, order_history),
+            self, "_handle_markets", QtCore.Qt.QueuedConnection,
+            QtCore.Q_ARG(dict, coins),
+            QtCore.Q_ARG(set, markets),
         )
 
-    @QtCore.pyqtSlot(dict, float, dict, dict)
-    def _set_balance_data(self, balances, eur_price, orders, order_history):
+    def _set_cb_items(self, combo_box, items):
+        old_items = set(combo_box.itemText(i) for i in range(combo_box.count()))
+        if set(items) == old_items: return
+        combo_box.clear()
+        for c in sorted(items):
+            combo_box.addItem(c)
+
+    @QtCore.pyqtSlot(dict, set)
+    def _handle_markets(self, coins, markets):
+        self._available_markets = markets
+        self._available_coins = coins
+
+        self._set_cb_items(self.cb_trade_curr_buy,
+                           {'BTC'} | self._available_coins['BTC'])
+
+        try:
+            last_markets = set(json.loads(open('last_markets').read()))
+        except FileNotFoundError:
+            last_markets = set()
+        if self._available_markets - last_markets:
+            if QtGui.QMessageBox.question(
+                    self, 'New Markets!!!11!!',
+                    "Be sure to buy coins of %r\n\nSave markets?" % (
+                        self._available_markets - last_markets),
+                    QtGui.QMessageBox.Ok, QtGui.QMessageBox.No
+                    ) == QtGui.QMessageBox.Ok:
+                open('last_markets', 'w').write(
+                    json.dumps(list(self._available_markets)))
+
+    def _threadsafe_fetch_balances(self):
+        if not self._trader_api: return
+        log.info("update balances..")
+        QtCore.QMetaObject.invokeMethod(
+            self, "_handle_balance_data", QtCore.Qt.QueuedConnection,
+            QtCore.Q_ARG(dict, self._trader_api.get_balances()),
+            QtCore.Q_ARG(float, trader.get_EUR()),
+        )
+
+    @QtCore.pyqtSlot(dict, float)
+    def _handle_balance_data(self, balances, eur_price):
         self._balances = balances
-        self.cb_trade_curr_sell.clear()
-        self.cb_trade_curr_buy.clear()
+        self._eur_price = eur_price
+        self._display_balances()
+
+    def _threadsafe_display_balances(self):
+        QtCore.QMetaObject.invokeMethod(
+            self, "_display_balances", QtCore.Qt.QueuedConnection)
+
+    @QtCore.pyqtSlot()
+    def _display_balances(self):
+        for m in self._balances:
+            if m == 'BTC': continue
+            self._add_market('BTC_' + m)
+
+        self._set_cb_items(self.cb_trade_curr_sell, self._balances.keys())
 
         self.tbl_balances.setSortingEnabled(False)
         self.tbl_balances.setRowCount(len(self._balances))
@@ -371,14 +428,13 @@ class Trader(QtGui.QMainWindow):
         eur_total = 0.
         i = 0
         for c, a in self._balances.items():
-            self.cb_trade_curr_sell.addItem(c)
             _m = 'BTC_%s' % c
             _btc_rate = (
                 1. if c == 'BTC' else
                 self._markets[_m].current_rate() if _m in self._markets else
                 0.)
             _add_btc = a * _btc_rate
-            _add_eur = _add_btc * xbt_usd_rate * eur_price
+            _add_eur = _add_btc * xbt_usd_rate * self._eur_price
             btc_total += _add_btc
             eur_total += _add_eur
             self.tbl_balances.setItem(i, 0, QtGui.QTableWidgetItem('%s' % c))
@@ -389,23 +445,31 @@ class Trader(QtGui.QMainWindow):
             i += 1
         self.tbl_balances.setSortingEnabled(True)
 
-        self.cb_trade_curr_buy.addItem('BTC')
-        for c in sorted(self._trader_api.get_markets()['BTC']):
-            self.cb_trade_curr_buy.addItem(c)
-
         if not 'USDT_BTC' in self._markets: return
 
         self.lbl_XBT_USD.setText('%.2f' % xbt_usd_rate)
-        self.lbl_XBT_EUR.setText('%.2f' % (xbt_usd_rate * eur_price))
+        self.lbl_XBT_EUR.setText('%.2f' % (xbt_usd_rate * self._eur_price))
         self.lbl_bal_BTC.setText('%.4f' % (btc_total))
         self.lbl_bal_EUR.setText('%.4f' % (eur_total))
 
+    def _threadsafe_fetch_orders(self):
+        if not self._trader_api: return
+        log.info("update own orders..")
+        QtCore.QMetaObject.invokeMethod(
+            self, "_handle_order_data", QtCore.Qt.QueuedConnection,
+            QtCore.Q_ARG(dict, self._trader_api.get_open_orders()),
+            QtCore.Q_ARG(dict, self._trader_api.get_order_history()),
+        )
+
+    @QtCore.pyqtSlot(dict, dict)
+    def _handle_order_data(self, orders, order_history):
+        self._order_history = order_history
         self._fill_order_table(self.tbl_open_orders, orders, cancel_button=True)
         self._fill_order_table(self.tbl_order_history, order_history)
         for m, history in order_history.items():
             for h in history:
                 if h['type'] == 'buy' and m in self._markets:
-                    print(m,  float(h['total']) / float(h['amount']))
+                    # print(m,  float(h['total']) / float(h['amount']))
                     self._markets[m].set_marker(
                         float(h['total']) / float(h['amount']))
                     self._markets[m].redraw()
@@ -425,11 +489,10 @@ class Trader(QtGui.QMainWindow):
                 table_widget.setItem(i, 4, QtGui.QTableWidgetItem(order['total']))
                 table_widget.setItem(i, 5, QtGui.QTableWidgetItem(order['rate']))
                 table_widget.setItem(i, 6, QtGui.QTableWidgetItem(order['orderNumber']))
-                on = order['orderNumber']
                 if cancel_button:
                     btn = QtGui.QPushButton('X')
                     btn.clicked.connect(
-                        lambda: self._cancel_order(on))
+                        lambda o=order['orderNumber']: self._cancel_order(o))
                     table_widget.setCellWidget(i, 7, btn)
                 i += 1
         table_widget.setSortingEnabled(True)
@@ -442,7 +505,7 @@ class Trader(QtGui.QMainWindow):
         try:
             log.info('cancel order %r', order_nr)
             result = self._trader_api.cancel_order(order_nr)
-            self._threadsafe_update_balances()
+            self._threadsafe_fetch_balances()
             log.info('result: %r', result)
         except Exception as exc:
             log.error('Exception while cancelling: %r', exc)
@@ -476,13 +539,12 @@ def get_args() -> dict:
 
 
 def main():
-    def handle_sigusr1(signal: int, frame) -> None:
+    def handle_sigusr1(_, frame) -> None:
         """ interrupt running process, and provide a python prompt for
             interactive debugging.
             see http://stackoverflow.com/questions/132058
                "showing-the-stack-trace-from-a-running-python-application"
         """
-        import traceback
         log.info('signal SIGUSR1 received, print stack trace')
         for f in traceback.format_stack(frame):
             for l in f.splitlines():
@@ -490,7 +552,17 @@ def main():
 
     args = get_args()
 
-    log.basicConfig(level=log.INFO)
+    log.basicConfig(
+        level=log.DEBUG if args.verbose else log.INFO,
+        format='%(asctime)s %(levelname)s %(threadName)s %(message)s',
+        datefmt="%y%m%d-%H%M%S")
+
+    log.addLevelName(log.CRITICAL, '(CC)')
+    log.addLevelName(log.ERROR,    '(EE)')
+    log.addLevelName(log.WARNING,  '(WW)')
+    log.addLevelName(log.INFO,     '(II)')
+    log.addLevelName(log.DEBUG,    '(DD)')
+    log.addLevelName(log.NOTSET,   '(NA)')
 
     trader.ALLOW_CACHED_VALUES = 'ALLOW' if args.allow_cached else 'NEVER'
 
