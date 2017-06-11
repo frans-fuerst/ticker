@@ -61,19 +61,23 @@
        <item>
         <layout class="QHBoxLayout" name="horizontalLayout_2">
          <item>
-          <widget class="QPushButton" name="pb_refresh">
+          <widget class="QPushButton" name="pb_profile">
            <property name="text">
-            <string>refresh</string>
+            <string>toggle profiling</string>
            </property>
           </widget>
          </item>
          <item>
-          <widget class="QCheckBox" name="cb_lowpass">
+          <widget class="QPushButton" name="pb_stacktrace">
            <property name="text">
-            <string>lowpass</string>
+            <string>stacktrace</string>
            </property>
-           <property name="checked">
-            <bool>true</bool>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="pb_refresh">
+           <property name="text">
+            <string>refresh</string>
            </property>
           </widget>
          </item>
@@ -223,6 +227,19 @@
           </property>
           <property name="alignment">
            <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+          </property>
+         </widget>
+        </item>
+        <item row="1" column="4">
+         <widget class="QPushButton" name="pb_update_balances">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="text">
+           <string>u</string>
           </property>
          </widget>
         </item>

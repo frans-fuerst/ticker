@@ -13,13 +13,13 @@ import traceback
 import logging as log
 from PyQt4 import QtGui, QtCore, Qt, uic
 import qwt
-import yappi
 
 import trader
 
-def toggle_profiling(clock_type: str='wall') -> None:
+def toggle_profiling(clock_type='wall') -> None:
     # https://code.google.com/archive/p/yappi/wikis/usageyappi.wiki
     # https://code.google.com/archive/p/yappi/wikis/UsageYappi_v092.wiki
+    import yappi
     if not yappi.is_running():
         yappi.set_clock_type(clock_type)
         yappi.start(builtins=False)
@@ -47,14 +47,14 @@ def toggle_profiling(clock_type: str='wall') -> None:
         print('yappi duration: %.1fs\n' % duration_yappi)
 
         func_stats.print_all(
-            out=out,
+            #out=out,
             columns={0: ("name",  40),
                      1: ("ncall",  5),
                      2: ("tsub",   8),
                      3: ("ttot",   8),
                      4: ("tavg",   8)})
         thread_stats.print_all(
-            out=out,
+            #out=out,
             columns={0: ("name", 23),
                      1: ("id",    5),
                      2: ("tid",  15),
@@ -66,7 +66,6 @@ class DataPlot(qwt.QwtPlot):
     def __init__(self, *args):
         qwt.QwtPlot.__init__(self, *args)
 
-        #self.setCanvasBackground(Qt.Qt.green)
         self.alignScales()
 
         self._curve_rates = qwt.QwtPlotCurve()
@@ -84,6 +83,7 @@ class DataPlot(qwt.QwtPlot):
         self.enableAxis(qwt.QwtPlot.yLeft, True)
         # self.setAxisTitle(qwt.QwtPlot.xBottom, "Time (seconds)")
         # self.setAxisTitle(qwt.QwtPlot.yLeft, "Values")
+        self.setCanvasBackground(Qt.Qt.green)
 
         self.redraw()
 
@@ -143,12 +143,14 @@ class MarketWidget(QtGui.QWidget):
             QtCore.Q_ARG(list, rates))
 
     @QtCore.pyqtSlot(list, list)
-    def _set_data(self, times, rates):
-        self._current_rate = rates[-1]
-        self.lbl_current.setText('%.2fh / %f' % (
-            (times[-1] - times[0]) / 3600, self._current_rate))
-        self._plot.set_data(times, rates)
-        mins, maxs = min(rates), max(rates)
+    def _set_data(self, times, rates_av):
+        self._current_rate = rates_av[-1]
+        self.lbl_current.setText('%.2fh / %.8f / %.8f' % (
+            (times[-1] - times[0]) / 3600,
+            self._current_rate,
+            self._trade_history.last_rate()))
+        self._plot.set_data(times, rates_av)
+        mins, maxs = min(rates_av), max(rates_av)
         if self._marker_value:
             maxs = max(maxs, self._marker_value)
             mins = min(mins, self._marker_value)
@@ -216,9 +218,12 @@ class Trader(QtGui.QMainWindow):
         self.pb_check.clicked.connect(self._pb_check_clicked)
         self.pb_place_order.clicked.connect(self._pb_place_order_clicked)
         self.pb_refresh.clicked.connect(self._pb_refresh_clicked)
+        self.pb_update_balances.clicked.connect(self._pb_update_balances_clicked)
         self.cb_trade_curr_sell.currentIndexChanged.connect(self._cb_trade_curr_sell_currentIndexChanged)
         self.cb_trade_curr_buy.currentIndexChanged.connect(self._cb_trade_curr_buy_currentIndexChanged)
         self.le_trade_amount.textChanged.connect(self._le_trade_amount_textChanged)
+        self.pb_profile.clicked.connect(self._pb_profile_clicked)
+        self.pb_stacktrace.clicked.connect(self._pb_stacktrace_clicked)
 
         # sort by time
         self.tbl_order_history.sortItems(0, QtCore.Qt.DescendingOrder)
@@ -287,7 +292,8 @@ class Trader(QtGui.QMainWindow):
 
     @QtCore.pyqtSlot(dict)
     def _log_message(self, record):
-        self.lst_log.addItem(record['message'])
+        self.lst_log.addItem(
+            record['message'] if 'message' in record else record['msg'])
         self.lst_log.scrollToBottom()
 
     def closeEvent(self, _):
@@ -307,9 +313,9 @@ class Trader(QtGui.QMainWindow):
                 log.debug('got new task..')
                 while True:
                     try:
-                        print('>> 2 - %s' % f)
+                        #print('>> 2 - %s' % f)
                         f()
-                        print('<< 2')
+                        #print('<< 2')
                         break
                     except Exception as exc:
                         traceback.print_exc()
@@ -327,6 +333,18 @@ class Trader(QtGui.QMainWindow):
 
     def _pb_refresh_clicked(self):
         self._update_values()
+
+    def _pb_stacktrace_clicked(self):
+        import faulthandler
+        faulthandler.dump_traceback(file=sys.stdout, all_threads=True)
+
+    def _pb_profile_clicked(self):
+        log.info('toggle profiling')
+        toggle_profiling(clock_type='cpu')
+
+    def _pb_update_balances_clicked(self):
+        self._tasks.put(self._threadsafe_fetch_orders)
+        self._tasks.put(self._threadsafe_fetch_balances)
 
     def _pb_check_clicked(self):
         self.pb_place_order.setEnabled(False)
@@ -484,7 +502,7 @@ class Trader(QtGui.QMainWindow):
             eur_total += _add_eur
             self.tbl_balances.setItem(i, 0, QtGui.QTableWidgetItem('%s' % c))
             self.tbl_balances.setItem(i, 1, QtGui.QTableWidgetItem('%10.5f' % a))
-            self.tbl_balances.setItem(i, 2, QtGui.QTableWidgetItem('%10.5f' % _btc_rate))
+            self.tbl_balances.setItem(i, 2, QtGui.QTableWidgetItem('%13.8f' % _btc_rate))
             self.tbl_balances.setItem(i, 3, QtGui.QTableWidgetItem('%10.5f' % _add_btc))
             self.tbl_balances.setItem(i, 4, QtGui.QTableWidgetItem('%10.5f' % _add_eur))
             i += 1
@@ -536,8 +554,8 @@ class Trader(QtGui.QMainWindow):
                 table_widget.setItem(i, 6, QtGui.QTableWidgetItem(order['orderNumber']))
                 if cancel_button:
                     btn = QtGui.QPushButton('X')
-                    btn.clicked.connect(
-                        lambda o=order['orderNumber']: self._cancel_order(o))
+                    f = lambda chk, v=order['orderNumber']: self._cancel_order(v)
+                    btn.clicked.connect(f)
                     table_widget.setCellWidget(i, 7, btn)
                 i += 1
         table_widget.setSortingEnabled(True)
@@ -550,7 +568,7 @@ class Trader(QtGui.QMainWindow):
         try:
             log.info('cancel order %r', order_nr)
             result = self._trader_api.cancel_order(order_nr)
-            self._threadsafe_fetch_balances()
+            self._balances_dirty = True
             log.info('result: %r', result)
         except Exception as exc:
             log.error('Exception while cancelling: %r', exc)
