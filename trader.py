@@ -11,6 +11,7 @@ from datetime import datetime
 from pprint import pprint
 import hmac
 import hashlib
+import socket
 import logging as log
 import time
 
@@ -90,6 +91,10 @@ class TradeHistory:
     def first_time(self):
         if not self._hdata: return 0.
         return self._hdata[0]['time']
+
+    def last_rate(self):
+        if not self._hdata: return 0.
+        return self._hdata[-1]['total'] / self._hdata[-1]['amount']
 
     def last_time(self):
         if not self._hdata: return 0.
@@ -189,16 +194,21 @@ def translate_ticker(val):
 def _fetch_http(request, request_data):
     assert ALLOW_CACHED_VALUES in {'NEVER', 'ALLOW', 'FORCE'}
     log.debug('caching policy: %r', ALLOW_CACHED_VALUES)
+    log.info('XXXX fetch %r', request)
     os.makedirs('cache', exist_ok=True)
     filename = os.path.join('cache', get_unique_name(request_data) + '.cache')
     if ALLOW_CACHED_VALUES in {'NEVER', 'ALLOW'}:
         try:
             while True:
                 try:
-                    result = urlopen(request).read()
+                    time.sleep(0.5)
+                    result = urlopen(request, timeout=10).read()
                     break
                 except http.client.IncompleteRead as exc:
-                    log.error('exception caught in urlopen: %r', exc)
+                    log.warning('exception caught in urlopen: %r - retry', exc)
+                except socket.timeout as exc:
+                    log.warning('socket timeout - retry')
+
             with open(filename, 'wb') as file:
                 file.write(result)
             return result.decode()
