@@ -131,7 +131,7 @@ class MarketWidgetItem(QtGui.QListWidgetItem):
 
 class MarketWidget(QtGui.QWidget):
 
-    close_window = QtCore.pyqtSignal(str)
+    updated = QtCore.pyqtSignal()
 
     def __init__(self, market, api):
         super().__init__()
@@ -185,6 +185,7 @@ class MarketWidget(QtGui.QWidget):
             mins = min(mins, self._marker_value)
         self._plot.setAxisScale(qwt.QwtPlot.yLeft, min(mins, maxs * 0.9), maxs)
         self.redraw()
+        self.updated.emit()
 
     def redraw(self):
         self._plot.redraw()
@@ -198,6 +199,13 @@ class MarketWidget(QtGui.QWidget):
 
 
 class Trader(QtGui.QMainWindow):
+    class Task:
+        def __init__(self, fn, priority):
+            self.fn = fn
+            self.priority = priority
+
+        def __lt__(self, other):
+            return self.priority < other.priority
 
     def __init__(self):
         class LogHandler(log.Handler):
@@ -227,7 +235,6 @@ class Trader(QtGui.QMainWindow):
         self._order_history = None
         self._available_markets = None
         self._available_coins = None
-        self._last_update = None
         self._eur_price = None
 
         self._update_timer = QtCore.QTimer(self)
@@ -241,7 +248,7 @@ class Trader(QtGui.QMainWindow):
         time_info_timer.start()
 
         self._worker_thread = threading.Thread(target=self._worker_thread_fn)
-        self._tasks = queue.Queue()
+        self._tasks = queue.PriorityQueue()
         self._worker_thread.start()
 
         self.pb_check.clicked.connect(self._pb_check_clicked)
@@ -261,9 +268,9 @@ class Trader(QtGui.QMainWindow):
         self.tbl_open_orders.sortItems(2, QtCore.Qt.DescendingOrder)
         self.le_suggested_rate_factor.setText(str(self._config['suggested_rate_factor']))
 
-        self._add_market('USDT_BTC')
+        self._add_market('USDT_BTC', self.lst_primary_coins)
         for m in self._config['markets']:
-            self._add_market(m)
+            self._add_market(m, self.lst_markets)
 
         self.show()
 
@@ -273,28 +280,22 @@ class Trader(QtGui.QMainWindow):
         if not self._tasks.empty():
             log.warning("task not done yet - I'll come back later")
             return
-        now = time.time()
 
         if not self._available_markets:
             # todo: update
-            self._tasks.put(self._threadsafe_fetch_markets)
+            self._put_task(self._threadsafe_fetch_markets, 1)
 
         if (self._order_history is None or
                 self._balances is None or
                 self._balances_dirty):
             self._balances_dirty = False
-            self._tasks.put(self._threadsafe_fetch_orders)
-            self._tasks.put(self._threadsafe_fetch_balances)
+            self._put_task(self._threadsafe_fetch_orders, 1)
+            self._put_task(self._threadsafe_fetch_balances, 1)
 
         for _, w in self._markets.items():
-            self._tasks.put(w.threadsafe_update_plot)
+            self._put_task(w.threadsafe_update_plot, 2)
 
-        self._tasks.put(self._threadsafe_display_balances)
-
-        def update_time(begin):
-            self._last_update = time.time()
-            log.info('update took %d seconds', self._last_update - begin)
-        self._tasks.put(lambda t=now: update_time(t))
+        self._put_task(self._threadsafe_display_balances, 1)
 
     def _load_config(self, filename):
         result = {'graph_height':   140,
@@ -326,16 +327,17 @@ class Trader(QtGui.QMainWindow):
 
     def closeEvent(self, _):
         log.info('got close event, wait for worker to finish..')
-        self._tasks.put(None)
+        self._put_task(None, 0)
         self._worker_thread.join()
         log.info('bye bye!')
+
+    def _put_task(self, fn, priority):
+        self._tasks.put(Trader.Task(fn, priority))
 
     def _worker_thread_fn(self):
         try:
             while True:
-                #print('>> 1')
-                f = self._tasks.get()
-                #print('<< 1')
+                f = self._tasks.get().fn
                 if f is None:
                     return
                 log.debug('got new task..')
@@ -352,13 +354,11 @@ class Trader(QtGui.QMainWindow):
             log.info('exit _worker_thread_fn()')
 
     def _update_timer_timeout(self):
-        log.info('Update timeout')
+        log.info('trigger updates')
         self._update_values()
 
     def _time_info_timer_timeout(self):
-        if not self._last_update: return
-        self.lst_markets.sortItems(QtCore.Qt.DescendingOrder)
-        self.lbl_last_update.setText('%d' % (time.time() - self._last_update))
+        self.lbl_last_update.setText('%d' % self._tasks.qsize())
 
     def _pb_refresh_clicked(self):
         self._update_values()
@@ -372,8 +372,8 @@ class Trader(QtGui.QMainWindow):
         toggle_profiling(clock_type='cpu')
 
     def _pb_update_balances_clicked(self):
-        self._tasks.put(self._threadsafe_fetch_orders)
-        self._tasks.put(self._threadsafe_fetch_balances)
+        self._put_task(self._threadsafe_fetch_orders, 1)
+        self._put_task(self._threadsafe_fetch_balances, 1)
 
     def _pb_check_clicked(self):
         self.pb_place_order.setEnabled(False)
@@ -426,7 +426,7 @@ class Trader(QtGui.QMainWindow):
 
         try:
             self._balances_dirty = True
-            # self._tasks.put(self._threadsafe_fetch_balances)
+            # self._put_task(self._threadsafe_fetch_balances, 1)
         except trader.ServerError as exc:
             log.error('cannot place order: %s', exc)
 
@@ -508,7 +508,7 @@ class Trader(QtGui.QMainWindow):
     def _display_balances(self):
         for m in self._balances:
             if m == 'BTC': continue
-            self._add_market('BTC_' + m)
+            self._add_market('BTC_' + m, self.lst_markets)
 
         self._set_cb_items(self.cb_trade_curr_sell, self._balances.keys())
 
@@ -602,16 +602,19 @@ class Trader(QtGui.QMainWindow):
         except Exception as exc:
             log.error('Exception while cancelling: %r', exc)
 
-    def _add_market(self, market):
+    def _add_market(self, market, list_widget):
         if market in self._markets: return
         log.info('add market: %r', market)
 
         market_widget = MarketWidget(market, self._trader_api)
-        market_widget_item = MarketWidgetItem(market_widget, self.lst_markets)
+        market_widget_item = MarketWidgetItem(market_widget, list_widget)
+        market_widget.updated.connect(
+            lambda: list_widget.sortItems(QtCore.Qt.DescendingOrder))
         market_widget_item.set_height(self._config['graph_height'])
 
         market_widget._history_length = self._config['history_length_h'] * 3600
         self._markets[market] = market_widget
+        list_widget.setMaximumHeight(list_widget.count() * (5 + self._config['graph_height']))
 
 
 def show_gui():

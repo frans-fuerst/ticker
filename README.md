@@ -5,11 +5,21 @@ trading experiment
 ToDo
 ====
 
+- [ ] write trade history
+- [ ] sync history updates
+- [ ] orders / balances on thread
+- [ ] highlight items with balances
+- [ ] only suggest buyable items
+
 - [ ] write balance history
 - [ ] filter trading target
 - [ ] track order / trades
 - [ ] edit graph parameters
 
+- [x] remove BTC from list
+- [x] sort only on signal
+- [x] priority queue / clear queue on close
+- [x] profile fetch calls
 - [x] crawl trading history back in time
 - [x] faster balances update
 - [x] show trading history
