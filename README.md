@@ -5,15 +5,14 @@ trading experiment
 ToDo
 ====
 
-- [ ] crawl trading history back in time
-- [ ] faster balances update
-- [ ] edit graph parameters
-
 - [ ] write balance history
 - [ ] filter trading target
-- [ ] show trading history
 - [ ] track order / trades
+- [ ] edit graph parameters
 
+- [x] crawl trading history back in time
+- [x] faster balances update
+- [x] show trading history
 - [x] inform on new markets
 - [x] abort trade
 - [x] rate multiplicator

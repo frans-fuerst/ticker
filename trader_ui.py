@@ -119,14 +119,14 @@ class MarketWidget(QtGui.QWidget):
     def __init__(self, market, api):
         QtGui.QWidget.__init__(self)
         uic.loadUi(os.path.join(os.path.dirname(__file__), 'market.ui'), self)
-        self._current_rate = 0.0
+        self._current_vema_rate = 0.0
         self._trader_api = api
         self._market = market
         self.lbl_market.setText(market)
         self._plot = DataPlot()
         self._history_length = 100
         self._marker_value = None
-        self.layout().addWidget(self._plot)
+        self.frm_main.layout().addWidget(self._plot)
         self._trade_history = trader.TradeHistory(market)
 
     def threadsafe_update_plot(self):
@@ -137,6 +137,8 @@ class MarketWidget(QtGui.QWidget):
         finally:
             print('<< fetch')
         times, rates = self._trade_history.get_plot_data(0.005)
+        if not times:
+            return
         QtCore.QMetaObject.invokeMethod(
             self, "_set_data", QtCore.Qt.QueuedConnection,
             QtCore.Q_ARG(list, times),
@@ -144,11 +146,14 @@ class MarketWidget(QtGui.QWidget):
 
     @QtCore.pyqtSlot(list, list)
     def _set_data(self, times, rates_av):
-        self._current_rate = rates_av[-1]
-        self.lbl_current.setText('%.2fh / %.8f / %.8f' % (
-            (times[-1] - times[0]) / 3600,
-            self._current_rate,
-            self._trade_history.last_rate()))
+        self._current_vema_rate = rates_av[-1]
+        self._current_trend = rates_av[-1] / rates_av[0] - 1.
+        self.lbl_rate_vema.setText('%.9f' % self._current_vema_rate)
+        self.lbl_rate.setText('%.9f' % self._trade_history.last_rate())
+        self.lbl_duration.setText('%.2fh' % ((times[-1] - times[0]) / 3600))
+        self.lbl_age.setText('%ds' % (time.time() - self._trade_history.last_time()))
+        self.lbl_trend.setText('%.2f%%' % (100 * self._current_trend))
+
         self._plot.set_data(times, rates_av)
         mins, maxs = min(rates_av), max(rates_av)
         if self._marker_value:
@@ -165,7 +170,7 @@ class MarketWidget(QtGui.QWidget):
         self._plot.set_marker(self._marker_value)
 
     def current_rate(self):
-        return self._current_rate
+        return self._current_vema_rate
 
 
 class Trader(QtGui.QMainWindow):
@@ -617,7 +622,7 @@ def main():
 
     log.basicConfig(
         level=log.DEBUG if args.verbose else log.INFO,
-        format='%(asctime)s %(levelname)s %(threadName)s %(message)s',
+        format='%(asctime)s.%(msecs)03d %(levelname)s %(threadName)s %(message)s',
         datefmt="%y%m%d-%H%M%S")
 
     log.addLevelName(log.CRITICAL, '(CC)')
