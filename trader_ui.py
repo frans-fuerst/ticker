@@ -112,14 +112,33 @@ class DataPlot(qwt.QwtPlot):
         self.replot()
 
 
+class MarketWidgetItem(QtGui.QListWidgetItem):
+    def __init__(self, market_widget, list_widget):
+        super().__init__()
+        self._market_widget = market_widget
+        list_widget.addItem(self)
+        list_widget.setItemWidget(self, market_widget)
+        self.setFlags(QtCore.Qt.ItemIsEnabled)
+
+    def __lt__(self, other):
+        return (self._market_widget.trend() < other._market_widget.trend()
+                if isinstance(other, MarketWidgetItem) else
+                super().__lt__(other))
+
+    def set_height(self, height):
+        self.setSizeHint(QtCore.QSize(110, height))
+
+
 class MarketWidget(QtGui.QWidget):
 
     close_window = QtCore.pyqtSignal(str)
 
     def __init__(self, market, api):
-        QtGui.QWidget.__init__(self)
+        super().__init__()
         uic.loadUi(os.path.join(os.path.dirname(__file__), 'market.ui'), self)
-        self._current_vema_rate = 0.0
+
+        self._current_vema_rate = 0.
+        self._current_trend = 0.
         self._trader_api = api
         self._market = market
         self.lbl_market.setText(market)
@@ -143,6 +162,9 @@ class MarketWidget(QtGui.QWidget):
             self, "_set_data", QtCore.Qt.QueuedConnection,
             QtCore.Q_ARG(list, times),
             QtCore.Q_ARG(list, rates))
+
+    def trend(self):
+        return self._current_trend
 
     @QtCore.pyqtSlot(list, list)
     def _set_data(self, times, rates_av):
@@ -249,7 +271,6 @@ class Trader(QtGui.QMainWindow):
         if not self._tasks.empty():
             log.warning("task not done yet - I'll come back later")
             return
-
         now = time.time()
 
         if not self._available_markets:
@@ -334,6 +355,7 @@ class Trader(QtGui.QMainWindow):
 
     def _time_info_timer_timeout(self):
         if not self._last_update: return
+        self.lst_markets.sortItems(QtCore.Qt.DescendingOrder)
         self.lbl_last_update.setText('%d' % (time.time() - self._last_update))
 
     def _pb_refresh_clicked(self):
@@ -581,14 +603,13 @@ class Trader(QtGui.QMainWindow):
     def _add_market(self, market):
         if market in self._markets: return
         log.info('add market: %r', market)
-        new_item = QtGui.QListWidgetItem()
-        new_item.setSizeHint(QtCore.QSize(110, self._config['graph_height']))
-        new_item.setFlags(QtCore.Qt.ItemIsEnabled)
-        new_market = MarketWidget(market, self._trader_api)
-        self.lst_markets.addItem(new_item)
-        self.lst_markets.setItemWidget(new_item, new_market)
-        new_market._history_length = self._config['history_length_h'] * 3600
-        self._markets[market] = new_market
+
+        market_widget = MarketWidget(market, self._trader_api)
+        market_widget_item = MarketWidgetItem(market_widget, self.lst_markets)
+        market_widget_item.set_height(self._config['graph_height'])
+
+        market_widget._history_length = self._config['history_length_h'] * 3600
+        self._markets[market] = market_widget
 
 
 def show_gui():
