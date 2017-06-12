@@ -142,6 +142,8 @@ class MarketWidget(QtGui.QWidget):
         self._trader_api = api
         self._market = market
         self.lbl_market.setText(market)
+        self.lbl_currencies.setText(
+            '/'.join(trader.get_full_name(c) for c in market.split('_')))
         self._plot = DataPlot()
         self._history_length = 100
         self._marker_value = None

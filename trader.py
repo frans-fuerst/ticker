@@ -18,6 +18,34 @@ import time
 ALLOW_CACHED_VALUES = 'ALLOW'  # 'NEVER', 'FORCE'
 MOST_RECENTLY = 9999999999
 
+def get_full_name(short):
+    try:
+        return {
+            'BTC':   'BC',
+            'USDT':  'USDTether',
+            'ETH':   'Ethereum',
+            'ETC':   'Eth. Cl.',
+            'XMR':   'Monero',
+            'LTC':   'Litecoin',
+            'BCN':   'Bytecoin',
+            'XVC':   'VCASH',
+            'BTS':   'Bitshare',
+            'NXT':   'Nxt',
+            'AMP':   'Synereo',
+            'VTC':   'Vertcoin',
+            'XRP':   'Ripple',
+            'DASH':  'Dash',
+            'GNT':   'Golem',
+            'FLO':   'Florin',
+            'BURST': 'Burst',
+            'SC':    'Siacoin',
+            'DOGE':  'Dodgecoin',
+            'GRC':   'Gridcoin',
+            'STRAT': 'Stratis',
+            }[short]
+    except KeyError:
+        return 'unknown(%s)' % short
+
 class ServerError(RuntimeError):
     pass
 
@@ -202,7 +230,9 @@ def _fetch_http(request, request_data):
             while True:
                 try:
                     time.sleep(0.5)
-                    result = urlopen(request, timeout=10).read()
+                    #t1 = time.time()
+                    result = urlopen(request, timeout=15).read()
+                    #log.info('fetched in %6.2fs: %r', time.time() - t1, request_data)
                     break
                 except http.client.IncompleteRead as exc:
                     log.warning('exception caught in urlopen: %r - retry', exc)
