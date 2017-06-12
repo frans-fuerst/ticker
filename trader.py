@@ -143,7 +143,7 @@ class TradeHistory:
         amounts = [e['amount'] for e in self._hdata]
         times = [e['time'] for e in self._hdata]
         rates_vema = vema(totals, amounts, ema_factor)
-        return times, rates_vema
+        return times[50:], rates_vema[50:]
 
 
 
@@ -194,7 +194,7 @@ def translate_ticker(val):
 def _fetch_http(request, request_data):
     assert ALLOW_CACHED_VALUES in {'NEVER', 'ALLOW', 'FORCE'}
     log.debug('caching policy: %r', ALLOW_CACHED_VALUES)
-    log.info('XXXX fetch %r', request)
+    log.info('XXXX fetch %r', request_data)
     os.makedirs('cache', exist_ok=True)
     filename = os.path.join('cache', get_unique_name(request_data) + '.cache')
     if ALLOW_CACHED_VALUES in {'NEVER', 'ALLOW'}:
