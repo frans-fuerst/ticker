@@ -238,6 +238,8 @@ class Trader(QtGui.QMainWindow):
         self._directory = os.path.dirname(os.path.realpath(__file__))
         uic.loadUi(os.path.join(self._directory, 'trader.ui'), self)
         self._config = self._load_config('config')
+        if 'proxies' in self._config:
+            trader.set_proxies(self._config['proxies'])
 
         self._trader_api = self._get_trader()
         self._balances = {}
@@ -351,7 +353,7 @@ class Trader(QtGui.QMainWindow):
         self._put_task(None, Priorities.Quit)
         self._worker_thread.join()
         t1 = time.time()
-        self_persist()
+        self._persist()
         log.info('saving trade history took %.2fs', time.time() - t1)
         log.info('bye bye!')
 
@@ -592,7 +594,11 @@ class Trader(QtGui.QMainWindow):
     def _threadsafe_fetch_orders(self):
         if not self._trader_api: return
         log.info("update own orders..")
-        last_order_time = self._order_history[-1]['time'] if self._order_history else 0
+        try:
+            last_order_time = self._order_history[-1]['time'] if self._order_history else 0
+        except KeyError:
+            pass
+
         QtCore.QMetaObject.invokeMethod(
             self, "_handle_order_data", QtCore.Qt.QueuedConnection,
             QtCore.Q_ARG(dict, self._trader_api.get_open_orders()),

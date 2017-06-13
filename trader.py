@@ -7,8 +7,8 @@ try:
     import ujson as json
 except ImportError:
     import json
-import urllib
 import http
+import urllib
 from urllib.request import urlopen, Request
 from datetime import datetime
 from pprint import pprint
@@ -45,6 +45,8 @@ def get_full_name(short):
             'DOGE':  'Dodgecoin',
             'GRC':   'Gridcoin',
             'STRAT': 'Stratis',
+            'XEM':   'NEM',
+            'FCT':   'Factom',
             }[short]
     except KeyError:
         return 'unknown(%s)' % short
@@ -52,6 +54,11 @@ def get_full_name(short):
 class ServerError(RuntimeError):
     pass
 
+def set_proxies(proxies):
+    proxy_support = urllib.request.ProxyHandler(proxies)
+    opener = urllib.request.build_opener(proxy_support,
+                                         urllib.request.CacheFTPHandler)
+    urllib.request.install_opener(opener)
 
 def ema(data, alpha):
     ''' returns eponential moving average
