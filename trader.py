@@ -52,6 +52,7 @@ def get_full_name(short):
 class ServerError(RuntimeError):
     pass
 
+
 def ema(data, alpha):
     ''' returns eponential moving average
     '''
@@ -71,6 +72,8 @@ def vema(totals, amounts, a):
     smooth_amounts = ema(amounts, a)
     return [t / c for t, c in zip(smooth_totals, smooth_amounts)]
 
+def merge_time_list(list1, list2):
+    return list2
 
 class TradeHistory:
     def __init__(self, market, step_size_sec=3600):

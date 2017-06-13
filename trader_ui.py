@@ -13,6 +13,7 @@ import traceback
 import logging as log
 from PyQt4 import QtGui, QtCore, Qt, uic
 import qwt
+from enum import IntEnum
 
 import trader
 
@@ -199,6 +200,15 @@ class MarketWidget(QtGui.QWidget):
         self._trade_history.save()
 
 
+class Priorities(IntEnum):
+    Quit = 0
+    Order = 1
+    Init = 2
+    Balances = 3
+    Low = 4
+    Lowest = 5
+
+
 class Trader(QtGui.QMainWindow):
     class Task:
         def __init__(self, fn, priority):
@@ -230,10 +240,10 @@ class Trader(QtGui.QMainWindow):
         self._config = self._load_config('config')
 
         self._trader_api = self._get_trader()
-        self._balances = None
+        self._balances = {}
         self._balances_dirty = True
         self._markets = {}
-        self._order_history = None
+        self._order_history = []
         self._available_markets = None
         self._available_coins = None
         self._eur_price = None
@@ -262,12 +272,21 @@ class Trader(QtGui.QMainWindow):
         self.pb_profile.clicked.connect(self._pb_profile_clicked)
         self.pb_stacktrace.clicked.connect(self._pb_stacktrace_clicked)
 
+        def setup_table(widget):
+            for i in range(widget.columnCount()):
+                widget.horizontalHeader().setResizeMode(
+                    i, QtGui.QHeaderView.ResizeToContents)
+
         # sort by time
         self.tbl_order_history.sortItems(0, QtCore.Qt.DescendingOrder)
         # sort by EUR value
         self.tbl_balances.sortItems(4, QtCore.Qt.DescendingOrder)
         self.tbl_open_orders.sortItems(2, QtCore.Qt.DescendingOrder)
         self.le_suggested_rate_factor.setText(str(self._config['suggested_rate_factor']))
+
+        setup_table(self.tbl_balances)
+        setup_table(self.tbl_open_orders)
+        setup_table(self.tbl_order_history)
 
         self._add_market('USDT_BTC', self.lst_primary_coins)
         for m in self._config['markets']:
@@ -284,18 +303,19 @@ class Trader(QtGui.QMainWindow):
 
         if not self._available_markets:
             # todo: update
-            self._put_task(self._threadsafe_fetch_markets, 1)
+            self._put_task(self._threadsafe_fetch_markets, Priorities.Init)
 
-        if (self._order_history is None or
-                self._balances is None or
+        if (not self._order_history or
+            not self._balances or
                 self._balances_dirty):
             self._balances_dirty = False
-            self._put_task(self._threadsafe_fetch_orders, 1)
-            self._put_task(self._threadsafe_fetch_balances, 1)
+            self._put_task(self._threadsafe_fetch_orders, Priorities.Balances)
+            self._put_task(self._threadsafe_fetch_balances, Priorities.Balances)
 
         for _, w in self._markets.items():
-            self._put_task(w.threadsafe_update_plot, 2)
+            self._put_task(w.threadsafe_update_plot, Priorities.Low)
 
+        # todo
         self._put_task(self._threadsafe_display_balances, 1)
 
     def _load_config(self, filename):
@@ -328,13 +348,30 @@ class Trader(QtGui.QMainWindow):
 
     def closeEvent(self, _):
         log.info('got close event, wait for worker to finish..')
-        self._put_task(None, 0)
+        self._put_task(None, Priorities.Quit)
         self._worker_thread.join()
         t1 = time.time()
-        for _, m in self._markets.items():
-            m.shutdown()
+        self_persist()
         log.info('saving trade history took %.2fs', time.time() - t1)
         log.info('bye bye!')
+
+    def _load(self):
+        try:
+            with open('personal.json') as f:
+                personal_data = json.load(f)
+                self._balances = personal_data['balances']
+                self._handle_order_data([], personal_data['trade_history'])
+        except FileNotFoundError:
+            pass
+
+    def _persist(self):
+        for _, m in self._markets.items():
+            m.shutdown()
+#        os.makedirs('personal', exist_ok=True)
+        with open('personal.json', 'w') as f:
+            json.dump({'balances': self._balances,
+                       'trade_history': self._order_history}, f)
+
 
     def _put_task(self, fn, priority):
         self._tasks.put(Trader.Task(fn, priority))
@@ -377,8 +414,8 @@ class Trader(QtGui.QMainWindow):
         toggle_profiling(clock_type='cpu')
 
     def _pb_update_balances_clicked(self):
-        self._put_task(self._threadsafe_fetch_orders, 1)
-        self._put_task(self._threadsafe_fetch_balances, 1)
+        self._put_task(self._threadsafe_fetch_orders, Priorities.Balances)
+        self._put_task(self._threadsafe_fetch_balances, Priorities.Balances)
 
     def _pb_check_clicked(self):
         self.pb_place_order.setEnabled(False)
@@ -394,6 +431,7 @@ class Trader(QtGui.QMainWindow):
                 suggestion_factor=speed_factor)
         except (RuntimeError, ValueError) as exc:
             log.error('cannot place order: %s', exc)
+            return
 
         self.le_order_market.setText(order['market'])
         self.le_order_amount.setText(str(order['amount']))
@@ -511,6 +549,8 @@ class Trader(QtGui.QMainWindow):
 
     @QtCore.pyqtSlot()
     def _display_balances(self):
+        if not self._balances: return
+
         for m in self._balances:
             if m == 'BTC': continue
             self._add_market('BTC_' + m, self.lst_markets)
@@ -552,6 +592,7 @@ class Trader(QtGui.QMainWindow):
     def _threadsafe_fetch_orders(self):
         if not self._trader_api: return
         log.info("update own orders..")
+        last_order_time = self._order_history[-1]['time'] if self._order_history else 0
         QtCore.QMetaObject.invokeMethod(
             self, "_handle_order_data", QtCore.Qt.QueuedConnection,
             QtCore.Q_ARG(dict, self._trader_api.get_open_orders()),
@@ -560,7 +601,8 @@ class Trader(QtGui.QMainWindow):
 
     @QtCore.pyqtSlot(dict, dict)
     def _handle_order_data(self, orders, order_history):
-        self._order_history = order_history
+        self._order_history = trader.merge_time_list(
+            self._order_history, order_history)
         self._fill_order_table(self.tbl_open_orders, orders, cancel_button=True)
         self._fill_order_table(self.tbl_order_history, order_history)
         for m, history in order_history.items():
@@ -592,10 +634,6 @@ class Trader(QtGui.QMainWindow):
                     table_widget.setCellWidget(i, 7, btn)
                 i += 1
         table_widget.setSortingEnabled(True)
-        for i in range(table_widget.columnCount()):
-            table_widget.horizontalHeader().setResizeMode(
-                i, QtGui.QHeaderView.ResizeToContents)
-
 
     def _cancel_order(self, order_nr):
         try:
