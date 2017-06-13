@@ -5,8 +5,10 @@ trading experiment
 ToDo
 ====
 
-- [ ] sync history updates
+- [ ] sanatize 'check' (faster, better rate)
 - [ ] orders / balances on thread
+- [ ] persist orders / balances
+- [ ] sync history updates
 - [ ] highlight items with balances
 - [ ] only suggest buyable items
 
