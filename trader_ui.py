@@ -123,8 +123,8 @@ class MarketWidgetItem(QtGui.QListWidgetItem):
 
     def __lt__(self, other):
         return (self._market_widget.trend() < other._market_widget.trend()
-                if isinstance(other, MarketWidgetItem) else
                 super().__lt__(other))
+                if isinstance(other, MarketWidgetItem) else
 
     def set_height(self, height):
         self.setSizeHint(QtCore.QSize(110, height))
@@ -238,6 +238,8 @@ class Trader(QtGui.QMainWindow):
         self._directory = os.path.dirname(os.path.realpath(__file__))
         uic.loadUi(os.path.join(self._directory, 'trader.ui'), self)
         self._config = self._load_config('config')
+        if 'proxies' in self._config:
+            trader.set_proxies(self._config['proxies'])
 
         self._trader_api = self._get_trader()
         self._data = trader.TraderData()
