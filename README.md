@@ -11,6 +11,8 @@ ToDo
 - [ ] sync history updates
 - [ ] highlight items with balances
 - [ ] only suggest buyable items
+- [ ] buy: check order book first
+- [ ] buy: disable controls on change and permanently
 
 - [ ] write balance history
 - [ ] filter trading target

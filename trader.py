@@ -47,6 +47,7 @@ def get_full_name(short):
             'STRAT': 'Stratis',
             'XEM':   'NEM',
             'FCT':   'Factom',
+            'POT':   'PotCoin',
             }[short]
     except KeyError:
         return 'unknown(%s)' % short
