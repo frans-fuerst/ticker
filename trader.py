@@ -106,7 +106,7 @@ class TradeHistory:
 
     def fetch_next(self):
         current_time = time.time()
-        log.info('update trade history for %r after %d seconds',
+        log.debug('update trade history for %r after %d seconds',
                  self._market, current_time - self.last_time())
 
         if current_time - self.last_time() > 6 * 3600:
@@ -129,10 +129,12 @@ class TradeHistory:
             end = self.first_time()
         else:
             log.debug("fetch_next: no need to update anything - just exit")
-            return
+            return False
 
         self._attach_data(Api.get_trade_history(
             *self._market.split('_'), start, end))
+
+        return True
 
     def count(self):
         return len(self._hdata)

@@ -153,7 +153,8 @@ class MarketWidget(QtGui.QWidget):
 
     def threadsafe_update_plot(self):
         log.info('update market trades for %r', self._market)
-        self._trade_history.fetch_next()
+        if not self._trade_history.fetch_next():
+            return
         times, rates = self._trade_history.get_plot_data(0.005)
         if not times:
             return
