@@ -3,7 +3,10 @@
 __all__ = ['translate_trade']
 
 import os
-import json
+try:
+    import ujson as json
+except ImportError:
+    import json
 import urllib
 import http
 from urllib.request import urlopen, Request
@@ -77,6 +80,23 @@ class TradeHistory:
         self._update_threshold_sec = 60.
         self._history_max_duration = 24 * 3600
 
+    def load(self):
+        try:
+            with open('trade_history-%s.json' % self._market) as f:
+                self._hdata = json.load(f)
+        except FileNotFoundError:
+            pass
+        except json.JSONDecodeError as exc:
+            log.warning(
+                'could not load TradeHistory for %r: %r', self._market, exc)
+
+    def save(self):
+        with open('trade_history-%s.json' % self._market, 'w') as f:
+            json.dump(self._hdata, f)
+
+    def clear(self):
+        self._hdata = []
+
     def __str__(self):
         return self.__repr__()
 
@@ -89,22 +109,26 @@ class TradeHistory:
         log.info('update trade history for %r after %d seconds',
                  self._market, current_time - self.last_time())
 
+        if current_time - self.last_time() > 6 * 3600:
+            # last update too long ago to fill the gap (for now)
+            self.clear()
+
         if not self._hdata:
             log.debug('fetch_next: there is no data yet - fetch an hour')
             start = current_time - self._step_size_sec
             end = MOST_RECENTLY
         elif current_time - self.last_time() > self._update_threshold_sec:
-            log.info('fetch_next: more than a couple of seconds have passed '
+            log.debug('fetch_next: more than a couple of seconds have passed '
                       'since last update - do an update now')
             start = self.last_time()
             end = MOST_RECENTLY
         elif current_time - self.first_time() < self._history_max_duration:
-            log.info("fetch_next: we don't need to update recent parts of the "
+            log.debug("fetch_next: we don't need to update recent parts of the "
                       "graph - fetch older data instead.")
             start = self.first_time() - self._step_size_sec
             end = self.first_time()
         else:
-            log.info("fetch_next: no need to update anything - just exit")
+            log.debug("fetch_next: no need to update anything - just exit")
             return
 
         self._attach_data(Api.get_trade_history(
@@ -196,7 +220,7 @@ def get_unique_name(data: dict) -> str:
 
 def translate_trade(trade):
     date = datetime.strptime(trade['date'], '%Y-%m-%d %H:%M:%S')
-    return {'date': date,
+    return {#'date': date,
             'time': time.mktime(date.timetuple()) - time.altzone,
             'tradeID': trade['tradeID'],
             'globalTradeID': trade['globalTradeID'],
@@ -222,7 +246,7 @@ def translate_ticker(val):
 def _fetch_http(request, request_data):
     assert ALLOW_CACHED_VALUES in {'NEVER', 'ALLOW', 'FORCE'}
     log.debug('caching policy: %r', ALLOW_CACHED_VALUES)
-    log.info('XXXX fetch %r', request_data)
+    log.debug('XXXX fetch %r', request_data)
     os.makedirs('cache', exist_ok=True)
     filename = os.path.join('cache', get_unique_name(request_data) + '.cache')
     if ALLOW_CACHED_VALUES in {'NEVER', 'ALLOW'}:

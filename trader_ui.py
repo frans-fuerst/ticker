@@ -149,14 +149,11 @@ class MarketWidget(QtGui.QWidget):
         self._marker_value = None
         self.frm_main.layout().addWidget(self._plot)
         self._trade_history = trader.TradeHistory(market)
+        self._trade_history.load()
 
     def threadsafe_update_plot(self):
         log.info('update market trades for %r', self._market)
-        try:
-            print('>> fetch')
-            self._trade_history.fetch_next()
-        finally:
-            print('<< fetch')
+        self._trade_history.fetch_next()
         times, rates = self._trade_history.get_plot_data(0.005)
         if not times:
             return
@@ -196,6 +193,9 @@ class MarketWidget(QtGui.QWidget):
 
     def current_rate(self):
         return self._current_vema_rate
+
+    def shutdown(self):
+        self._trade_history.save()
 
 
 class Trader(QtGui.QMainWindow):
@@ -329,6 +329,10 @@ class Trader(QtGui.QMainWindow):
         log.info('got close event, wait for worker to finish..')
         self._put_task(None, 0)
         self._worker_thread.join()
+        t1 = time.time()
+        for _, m in self._markets.items():
+            m.shutdown()
+        log.info('saving trade history took %.2fs', time.time() - t1)
         log.info('bye bye!')
 
     def _put_task(self, fn, priority):
@@ -561,7 +565,6 @@ class Trader(QtGui.QMainWindow):
         for m, history in order_history.items():
             for h in history:
                 if h['type'] == 'buy' and m in self._markets:
-                    # print(m,  float(h['total']) / float(h['amount']))
                     self._markets[m].set_marker(
                         float(h['total']) / float(h['amount']))
                     self._markets[m].redraw()
@@ -614,7 +617,8 @@ class Trader(QtGui.QMainWindow):
 
         market_widget._history_length = self._config['history_length_h'] * 3600
         self._markets[market] = market_widget
-        list_widget.setMaximumHeight(list_widget.count() * (5 + self._config['graph_height']))
+        list_widget.setMaximumHeight(
+            list_widget.count() * (5 + self._config['graph_height']))
 
 
 def show_gui():

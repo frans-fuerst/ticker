@@ -5,7 +5,6 @@ trading experiment
 ToDo
 ====
 
-- [ ] write trade history
 - [ ] sync history updates
 - [ ] orders / balances on thread
 - [ ] highlight items with balances
@@ -16,6 +15,7 @@ ToDo
 - [ ] track order / trades
 - [ ] edit graph parameters
 
+- [x] write trade history
 - [x] remove BTC from list
 - [x] sort only on signal
 - [x] priority queue / clear queue on close
