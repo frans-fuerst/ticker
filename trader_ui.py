@@ -201,7 +201,7 @@ class MarketWidget(QtGui.QWidget):
 
 
 class Priorities(IntEnum):
-    Quit = 0
+    Critical = 0
     Order = 1
     Init = 2
     Balances = 3
@@ -350,7 +350,7 @@ class Trader(QtGui.QMainWindow):
 
     def closeEvent(self, _):
         log.info('got close event, wait for worker to finish..')
-        self._put_task(None, Priorities.Quit)
+        self._put_task(None, Priorities.Critical)
         self._worker_thread.join()
         t1 = time.time()
         self._persist()
@@ -379,25 +379,30 @@ class Trader(QtGui.QMainWindow):
         self._tasks.put(Trader.Task(fn, priority))
 
     def _worker_thread_fn(self):
-        try:
-            while True:
-                f = self._tasks.get().fn
-                if f is None:
+        def multiple_try(fn, times):
+            for i in range(times):
+                try:
+                    fn()
                     return
-                log.debug('got new task..')
-                while True:
-                    try:
-                        #print('>> 2 - %s' % f)
-                        f()
-                        #print('<< 2')
-                        break
-                    except Exception as exc:
-                        traceback.print_exc()
-                        log.error('Exception in worker thread %r', exc)
-        finally:
-            log.info('exit _worker_thread_fn()')
+                except Exception as exc:
+                    traceback.print_exc()
+                    log.warning('Exception in worker thread: %r', exc)
+            raise Exception()
+
+        while True:
+            f = self._tasks.get().fn
+            if f is None:
+                log.info('exit _worker_thread_fn()')
+                return
+            log.debug('got new task..')
+            try:
+                multiple_try(f, 3)
+            except Exception as exc:
+                log.error('giving up trying to call %r', f)
+                return
 
     def _update_timer_timeout(self):
+        if not self._worker_thread.is_alive(): return
         log.info('trigger updates')
         self._update_values()
 
@@ -633,22 +638,31 @@ class Trader(QtGui.QMainWindow):
                 table_widget.setItem(i, 4, QtGui.QTableWidgetItem(order['total']))
                 table_widget.setItem(i, 5, QtGui.QTableWidgetItem(order['rate']))
                 table_widget.setItem(i, 6, QtGui.QTableWidgetItem(order['orderNumber']))
+
+                def cancel(ordernr):
+                    self._put_task(
+                        lambda o=ordernr: self._threadsafe_cancel_order(o),
+                        Priorities.Critical)
+
                 if cancel_button:
                     btn = QtGui.QPushButton('X')
-                    f = lambda chk, v=order['orderNumber']: self._cancel_order(v)
-                    btn.clicked.connect(f)
+                    btn.clicked.connect(
+                        lambda chk, v=order['orderNumber']: cancel(v))
                     table_widget.setCellWidget(i, 7, btn)
                 i += 1
         table_widget.setSortingEnabled(True)
 
-    def _cancel_order(self, order_nr):
-        try:
-            log.info('cancel order %r', order_nr)
-            result = self._trader_api.cancel_order(order_nr)
-            self._balances_dirty = True
-            log.info('result: %r', result)
-        except Exception as exc:
-            log.error('Exception while cancelling: %r', exc)
+    def _threadsafe_cancel_order(self, order_nr):
+        log.info('cancel order %r', order_nr)
+        QtCore.QMetaObject.invokeMethod(
+            self, "_handle_order_canceled", QtCore.Qt.QueuedConnection,
+            QtCore.Q_ARG(dict, self._trader_api.cancel_order(order_nr)),
+        )
+
+    @QtCore.pyqtSlot(dict)
+    def _handle_order_canceled(self, result):
+        log.info('cancel returned %r', result)
+        self._balances_dirty = True
 
     def _add_market(self, market, list_widget):
         if market in self._markets: return
