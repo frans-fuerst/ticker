@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 
-__all__ = ['translate_trade']
-
 import os
 try:
     import ujson as json
@@ -17,6 +15,7 @@ import hashlib
 import socket
 import logging as log
 import time
+import threading
 
 ALLOW_CACHED_VALUES = 'ALLOW'  # 'NEVER', 'FORCE'
 MOST_RECENTLY = 9999999999
@@ -61,6 +60,138 @@ def set_proxies(proxies):
                                          urllib.request.CacheFTPHandler)
     urllib.request.install_opener(opener)
 
+
+class TraderData:
+    def __init__(self):
+        self._last_thread = None
+        self._balances = {}
+        self._trade_history = {}
+        self._eur_price = 0.
+        self._open_orders = []
+        self._available_markets = {}
+        self._market_history = {}
+
+    def _called_from_same_thread(self):
+        thread_id = threading.current_thread().ident
+        if not self._last_thread:
+            self._last_thread = thread_id
+        return self._last_thread == thread_id
+
+    def create_trade_history(self, market):
+        new_market = TradeHistory(market)
+        self._market_history[market] = new_market
+        return new_market
+
+    def update_available_markets(self, api):
+        assert(self._called_from_same_thread())
+        ticker = api.get_ticker()
+        self._available_markets = api.extract_coin_data(ticker)
+
+    def update_balances(self, api):
+        assert(self._called_from_same_thread())
+        self._balances = api.get_balances()
+
+    def update_trade_history(self, api):
+        assert(self._called_from_same_thread())
+        # trade history is not a list!
+        #last_order_time = (self._trade_history[-1]['time']
+        #                   if self._trade_history else 0)
+        #self._trade_history = merge_time_list(
+        #    self._trade_history, api.get_order_history())
+        self._trade_history = api.get_order_history()
+
+    def update_open_orders(self, api):
+        assert(self._called_from_same_thread())
+        self._open_orders = api.get_open_orders()
+
+    def update_eur(self):
+        assert(self._called_from_same_thread())
+        self._eur_price = get_EUR()
+
+    def balances(self, market=None):
+        return self._balances[market] if market else self._balances
+
+    def trade_history(self):
+        return self._trade_history
+
+    def open_orders(self):
+        return self._open_orders
+
+    def eur_price(self):
+        return self._eur_price
+
+    def load(self):
+        try:
+            with open('personal.json') as f:
+                personal_data = json.load(f)
+                self._balances = personal_data['balances']
+                self._trade_history = personal_data['trade_history']
+        except FileNotFoundError:
+            pass
+
+    def save(self):
+        #        os.makedirs('personal', exist_ok=True)
+        with open('personal.json', 'w') as f:
+            json.dump({'balances': self._balances,
+                       'trade_history': self._trade_history}, f)
+
+    def get_current_rate(self, market):
+        # ==> move to TraderStrategy
+        try:
+            total, amount, minr, maxr = sum_trades(self._market_history[market].data()[-50:])
+        except KeyError as exc:
+            raise ValueError('market %r not subscribed' % market) from exc
+        return total / amount, minr, maxr
+
+    def suggest_order(self, *,
+                    sell: tuple, buy: str,
+                    suggestion_factor: float) -> dict:
+        # ==> move to TraderStrategy
+        if not self._balances or not self._available_markets:
+            raise RuntimeError('not ready')
+
+        amount, what_to_sell = sell
+        log.info('try to sell %f %r for %r', amount, what_to_sell, buy)# todo: correct
+
+        if not what_to_sell in self._balances:
+            raise ValueError(
+                'You do not have %r to sell' % what_to_sell)
+        log.info('> you have %f %r', self._balances[what_to_sell], what_to_sell)
+        if self._balances[what_to_sell] < amount:
+            raise ValueError(
+                'You do not have enough %r to sell (just %f)' % (
+                    what_to_sell, self._balances[what_to_sell]))
+
+        if (what_to_sell in self._available_markets and
+                buy in self._available_markets[what_to_sell]):
+            market = what_to_sell + '_' + buy
+            action = 'buy'
+        elif (buy in self._available_markets and
+                  what_to_sell in self._available_markets[buy]):
+            market = buy + '_' + what_to_sell
+            action = 'sell'
+        else:
+            raise ValueError(
+                'No market available for %r -> %r' % (
+                    what_to_sell, buy))
+
+        # [todo]: make sure this is correct!!!
+        current_rate, minr, maxr = self.get_current_rate(market)
+
+        target_rate = (
+            current_rate * suggestion_factor if action == 'buy' else
+            current_rate / suggestion_factor)
+
+        log.info('> current rate is %f(%f..%f), target is %f',
+                 current_rate, minr, maxr, target_rate)
+
+        return {'market': market,
+                'action': action,
+                'rate': target_rate,
+                'amount': (amount if action == 'sell' else
+                           amount / target_rate)}
+
+
 def ema(data, alpha):
     ''' returns eponential moving average
     '''
@@ -80,8 +211,10 @@ def vema(totals, amounts, a):
     smooth_amounts = ema(amounts, a)
     return [t / c for t, c in zip(smooth_totals, smooth_amounts)]
 
+
 def merge_time_list(list1, list2):
     return list2
+
 
 class TradeHistory:
     def __init__(self, market, step_size_sec=3600):
@@ -90,6 +223,12 @@ class TradeHistory:
         self._step_size_sec = step_size_sec
         self._update_threshold_sec = 60.
         self._history_max_duration = 24 * 3600
+
+    def name(self):
+        return self._market
+
+    def friendly_name(self):
+        return '/'.join(get_full_name(c) for c in self._market.split('_'))
 
     def load(self):
         try:
@@ -231,29 +370,37 @@ def get_unique_name(data: dict) -> str:
             .translate(dict.fromkeys(map(ord, u"\"'[]{}() "))))
 
 
-def translate_trade(trade):
-    date = datetime.strptime(trade['date'], '%Y-%m-%d %H:%M:%S')
-    return {#'date': date,
-            'time': time.mktime(date.timetuple()) - time.altzone,
-            'tradeID': trade['tradeID'],
-            'globalTradeID': trade['globalTradeID'],
-            'total': float(trade['total']),
-            'amount': float(trade['amount']),
-            'rate': float(trade['rate']),
-            'type': trade['type']}
+def translate_dataset(data: dict) -> dict:
+    result = {key: {
+        'date': lambda x: x,
+        'type': lambda x: x,
+        'category': lambda x: x,
+        'tradeID': int,
+        'globalTradeID': int,
+        'orderNumber': int,
+        'id': int,
+        'total': float,
+        'amount': float,
+        'rate': float,
+        'fee': float,
+        'baseVolume': float,
+        'high24hr': float,
+        'highestBid': float,
+        'last': float,
+        'low24hr': float,
+        'lowestAsk': float,
+        'percentChange': float,
+        'quoteVolume': float,
+        'startingAmount': float,
+        'margin': float,
+        'isFrozen': lambda x: x != '0',
+        }[key](v) for key, v in data.items()}
 
-
-def translate_ticker(val):
-    return {'baseVolume': float(val['baseVolume']),
-            'high24hr': float(val['high24hr']),
-            'highestBid': float(val['highestBid']),
-            'id': val['id'],
-            'isFrozen': val['id'] != '0',
-            'last': float(val['last']),
-            'low24hr': float(val['low24hr']),
-            'lowestAsk': float(val['lowestAsk']),
-            'percentChange': float(val['percentChange']),
-            'quoteVolume': float(val['quoteVolume'])}
+    if 'date' in data:
+        result['time'] = (time.mktime(
+            datetime.strptime(
+                data['date'], '%Y-%m-%d %H:%M:%S').timetuple()) - time.altzone)
+    return result
 
 
 def _fetch_http(request, request_data):
@@ -264,24 +411,19 @@ def _fetch_http(request, request_data):
     filename = os.path.join('cache', get_unique_name(request_data) + '.cache')
     if ALLOW_CACHED_VALUES in {'NEVER', 'ALLOW'}:
         try:
-            while True:
-                try:
-                    time.sleep(0.5)
-                    #t1 = time.time()
-                    result = urlopen(request, timeout=15).read()
-                    #log.info('fetched in %6.2fs: %r', time.time() - t1, request_data)
-                    break
-                except http.client.IncompleteRead as exc:
-                    log.warning('exception caught in urlopen: %r - retry', exc)
-                except socket.timeout as exc:
-                    log.warning('socket timeout - retry')
-
-            with open(filename, 'wb') as file:
-                file.write(result)
-            return result.decode()
+            time.sleep(0.2)
+            #t1 = time.time()
+            result = urlopen(request, timeout=15).read()
+            #log.info('fetched in %6.2fs: %r', time.time() - t1, request_data)
+        except (http.client.IncompleteRead, socket.timeout) as exc:
+            raise ServerError(repr(exc))
         except urllib.error.URLError as exc:
             if ALLOW_CACHED_VALUES == 'NEVER':
                 raise ServerError(repr(exc)) from exc
+        else:
+            with open(filename, 'wb') as file:
+                file.write(result)
+            return result.decode()
     try:
         with open(filename, 'rb') as file:
             log.warning('use chached values for %r', request)
@@ -332,7 +474,7 @@ class Api:
         if start:
             req.update({'start': start if stop else time.time() - start,
                         'end': stop if stop else MOST_RECENTLY})
-        return list(reversed([translate_trade(t)
+        return list(reversed([translate_dataset(t)
                 for t in Api._run_public_command(
                     'returnTradeHistory', req)]))
 
@@ -349,7 +491,7 @@ class Api:
 
     @staticmethod
     def get_ticker() -> dict:
-        return {c: translate_ticker(v)
+        return {c: translate_dataset(v)
                 for c, v in Api._run_public_command('returnTicker').items()}
 
     def get_balances(self) -> dict:
@@ -367,16 +509,17 @@ class Api:
             'cancelOrder', {'orderNumber': order_nr})
 
     def get_open_orders(self) -> dict:
-        return {c: o
-                for c, o in self._run_private_command(
+        return {c: [translate_dataset(o) for o in order_list]
+                for c, order_list in self._run_private_command(
                     'returnOpenOrders', {'currencyPair': 'all'}).items()
-                if o}
+                if order_list}
 
     def get_order_history(self) -> dict:
-        return self._run_private_command(
-            'returnTradeHistory', {'currencyPair': 'all',
-                                   'start': 0,
-                                   'end': MOST_RECENTLY})
+        return {c: [translate_dataset(o) for o in order_list]
+                for c, order_list in self._run_private_command(
+                    'returnTradeHistory', {'currencyPair': 'all',
+                                           'start': 0,
+                                           'end': MOST_RECENTLY}).items()}
 
     @staticmethod
     def extract_coin_data(ticker):
@@ -405,22 +548,20 @@ class Api:
 
     def check_order(self, *,
                     sell: tuple, buy: str,
-                    suggestion_factor: float) -> float:
+                    suggestion_factor: float,
+                    balances: dict) -> float:
         amount, what_to_sell = sell
         log.info('try to sell %f %r for %r', amount, what_to_sell, buy)# todo: correct
 
-        def check_balance():
-            balances = self.get_balances()
-            if not what_to_sell in balances:
-                raise ValueError(
-                    'You do not have %r to sell' % what_to_sell)
-            log.info('> you have %f %r', balances[what_to_sell], what_to_sell)
-            if balances[what_to_sell] < amount:
-                raise ValueError(
-                    'You do not have enough %r to sell (just %f)' % (
-                        what_to_sell, balances[what_to_sell]))
+        if not what_to_sell in balances:
+            raise ValueError(
+                'You do not have %r to sell' % what_to_sell)
+        log.info('> you have %f %r', balances[what_to_sell], what_to_sell)
+        if balances[what_to_sell] < amount:
+            raise ValueError(
+                'You do not have enough %r to sell (just %f)' % (
+                    what_to_sell, balances[what_to_sell]))
 
-        check_balance()  # todo: cached balance?
         if (what_to_sell in self.get_coins() and
                 buy in self.get_coins()[what_to_sell]):
             market = what_to_sell + '_' + buy
