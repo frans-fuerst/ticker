@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 
-__all__ = ['translate_trade']
-
 import os
 try:
     import ujson as json
@@ -212,8 +210,10 @@ def vema(totals, amounts, a):
     smooth_amounts = ema(amounts, a)
     return [t / c for t, c in zip(smooth_totals, smooth_amounts)]
 
+
 def merge_time_list(list1, list2):
     return list2
+
 
 class TradeHistory:
     def __init__(self, market, step_size_sec=3600):
@@ -369,44 +369,37 @@ def get_unique_name(data: dict) -> str:
             .translate(dict.fromkeys(map(ord, u"\"'[]{}() "))))
 
 
-def translate_trade(trade):
-    date = datetime.strptime(trade['date'], '%Y-%m-%d %H:%M:%S')
-    return {'date': trade['date'],
-            'time': time.mktime(date.timetuple()) - time.altzone,
-            'tradeID': int(trade['tradeID']),
-            'globalTradeID': int(trade['globalTradeID']),
-            'total': float(trade['total']),
-            'amount': float(trade['amount']),
-            'rate': float(trade['rate']),
-            'type': trade['type']}
+def translate_dataset(data: dict) -> dict:
+    result = {key: {
+        'date': lambda x: x,
+        'type': lambda x: x,
+        'category': lambda x: x,
+        'tradeID': int,
+        'globalTradeID': int,
+        'orderNumber': int,
+        'id': int,
+        'total': float,
+        'amount': float,
+        'rate': float,
+        'fee': float,
+        'baseVolume': float,
+        'high24hr': float,
+        'highestBid': float,
+        'last': float,
+        'low24hr': float,
+        'lowestAsk': float,
+        'percentChange': float,
+        'quoteVolume': float,
+        'startingAmount': float,
+        'margin': float,
+        'isFrozen': lambda x: x != '0',
+        }[key](v) for key, v in data.items()}
 
-
-def translate_order(order):
-    date = datetime.strptime(order['date'], '%Y-%m-%d %H:%M:%S')
-    return {'date': order['date'],
-            'time': time.mktime(date.timetuple()) - time.altzone,
-            'category': order['category'],
-            'tradeID': int(order['tradeID']),
-            'globalTradeID': int(order['globalTradeID']),
-            'orderNumber': int(order['globalTradeID']),
-            'total': float(order['total']),
-            'amount': float(order['amount']),
-            'rate': float(order['rate']),
-            'fee': float(order['fee']),
-            'type': order['type']}
-
-
-def translate_ticker(val):
-    return {'baseVolume': float(val['baseVolume']),
-            'high24hr': float(val['high24hr']),
-            'highestBid': float(val['highestBid']),
-            'id': int(val['id']),
-            'isFrozen': val['id'] != '0',
-            'last': float(val['last']),
-            'low24hr': float(val['low24hr']),
-            'lowestAsk': float(val['lowestAsk']),
-            'percentChange': float(val['percentChange']),
-            'quoteVolume': float(val['quoteVolume'])}
+    if 'date' in data:
+        result['time'] = (time.mktime(
+            datetime.strptime(
+                data['date'], '%Y-%m-%d %H:%M:%S').timetuple()) - time.altzone)
+    return result
 
 
 def _fetch_http(request, request_data):
@@ -417,24 +410,19 @@ def _fetch_http(request, request_data):
     filename = os.path.join('cache', get_unique_name(request_data) + '.cache')
     if ALLOW_CACHED_VALUES in {'NEVER', 'ALLOW'}:
         try:
-            while True:
-                try:
-                    time.sleep(0.5)
-                    #t1 = time.time()
-                    result = urlopen(request, timeout=15).read()
-                    #log.info('fetched in %6.2fs: %r', time.time() - t1, request_data)
-                    break
-                except http.client.IncompleteRead as exc:
-                    log.warning('exception caught in urlopen: %r - retry', exc)
-                except socket.timeout as exc:
-                    log.warning('socket timeout - retry')
-
-            with open(filename, 'wb') as file:
-                file.write(result)
-            return result.decode()
+            time.sleep(0.2)
+            #t1 = time.time()
+            result = urlopen(request, timeout=15).read()
+            #log.info('fetched in %6.2fs: %r', time.time() - t1, request_data)
+        except (http.client.IncompleteRead, socket.timeout) as exc:
+            raise ServerError(repr(exc))
         except urllib.error.URLError as exc:
             if ALLOW_CACHED_VALUES == 'NEVER':
                 raise ServerError(repr(exc)) from exc
+        else:
+            with open(filename, 'wb') as file:
+                file.write(result)
+            return result.decode()
     try:
         with open(filename, 'rb') as file:
             log.warning('use chached values for %r', request)
@@ -485,7 +473,7 @@ class Api:
         if start:
             req.update({'start': start if stop else time.time() - start,
                         'end': stop if stop else MOST_RECENTLY})
-        return list(reversed([translate_trade(t)
+        return list(reversed([translate_dataset(t)
                 for t in Api._run_public_command(
                     'returnTradeHistory', req)]))
 
@@ -502,7 +490,7 @@ class Api:
 
     @staticmethod
     def get_ticker() -> dict:
-        return {c: translate_ticker(v)
+        return {c: translate_dataset(v)
                 for c, v in Api._run_public_command('returnTicker').items()}
 
     def get_balances(self) -> dict:
@@ -520,13 +508,13 @@ class Api:
             'cancelOrder', {'orderNumber': order_nr})
 
     def get_open_orders(self) -> dict:
-        return {c: o
-                for c, o in self._run_private_command(
+        return {c: [translate_dataset(o) for o in order_list]
+                for c, order_list in self._run_private_command(
                     'returnOpenOrders', {'currencyPair': 'all'}).items()
-                if o}
+                if order_list}
 
     def get_order_history(self) -> dict:
-        return {c: [translate_order(o) for o in order_list]
+        return {c: [translate_dataset(o) for o in order_list]
                 for c, order_list in self._run_private_command(
                     'returnTradeHistory', {'currencyPair': 'all',
                                            'start': 0,

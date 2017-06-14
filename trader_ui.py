@@ -123,8 +123,8 @@ class MarketWidgetItem(QtGui.QListWidgetItem):
 
     def __lt__(self, other):
         return (self._market_widget.trend() < other._market_widget.trend()
-                super().__lt__(other))
                 if isinstance(other, MarketWidgetItem) else
+                super().__lt__(other))
 
     def set_height(self, height):
         self.setSizeHint(QtCore.QSize(110, height))
@@ -632,7 +632,7 @@ class Trader(QtGui.QMainWindow):
                 table_widget.setItem(i, 3, QtGui.QTableWidgetItem('%.8f' % order['amount']))
                 table_widget.setItem(i, 4, QtGui.QTableWidgetItem('%.8f' % order['total']))
                 table_widget.setItem(i, 5, QtGui.QTableWidgetItem('%.8f' % order['rate']))
-                table_widget.setItem(i, 6, QtGui.QTableWidgetItem('%.8f' % order['orderNumber']))
+                table_widget.setItem(i, 6, QtGui.QTableWidgetItem(str(order['orderNumber'])))
 
                 def cancel(ordernr):
                     self._put_task(
