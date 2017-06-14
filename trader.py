@@ -53,6 +53,111 @@ class ServerError(RuntimeError):
     pass
 
 
+class TraderData:
+    def __init__(self):
+        self._balances = {}
+        self._trade_history = {}
+        self._eur_price = 0.
+        self._open_orders = []
+        self._available_markets = {}
+
+    def _check_thread(self):
+        pass
+
+    def update_available_markets(self):
+        self._check_thread()
+
+    def update_balances(self, api):
+        self._check_thread()
+        self._balances = api.get_balances()
+
+    def update_trade_history(self, api):
+        self._check_thread()
+        last_order_time = (self._trade_history[-1]['time']
+                           if self._trade_history else 0)
+        self._trade_history = merge_time_list(
+            self._trade_history, api.get_order_history())
+
+    def update_open_orders(self, api):
+        self._check_thread()
+        self._open_orders = api.get_open_orders()
+
+    def update_eur(self):
+        self._check_thread()
+        self._eur_price = get_EUR()
+
+    def balances(self, market=None):
+        return self._balances[market] if market else self._balances
+
+    def trade_history(self):
+        return self._trade_history
+
+    def open_orders(self):
+        return self._open_orders
+
+    def load(self):
+        try:
+            with open('personal.json') as f:
+                personal_data = json.load(f)
+                self._balances = personal_data['balances']
+                self._trade_history = personal_data['trade_history']
+        except FileNotFoundError:
+            pass
+
+    def save(self):
+        #        os.makedirs('personal', exist_ok=True)
+        with open('personal.json', 'w') as f:
+            json.dump({'balances': self._balances,
+                       'trade_history': self._trade_history}, f)
+
+    def suggest_order(self, *,
+                    sell: tuple, buy: str,
+                    suggestion_factor: float) -> dict:
+        if not self._balances or not self._available_markets:
+            raise RuntimeError('not ready')
+
+        amount, what_to_sell = sell
+        log.info('try to sell %f %r for %r', amount, what_to_sell, buy)# todo: correct
+
+        if not what_to_sell in self._balances:
+            raise ValueError(
+                'You do not have %r to sell' % what_to_sell)
+        log.info('> you have %f %r', balances[what_to_sell], what_to_sell)
+        if self._balances[what_to_sell] < amount:
+            raise ValueError(
+                'You do not have enough %r to sell (just %f)' % (
+                    what_to_sell, self._balances[what_to_sell]))
+
+        if (what_to_sell in self._available_markets and
+                buy in self._available_markets[what_to_sell]):
+            market = what_to_sell + '_' + buy
+            action = 'buy'
+        elif (buy in self._available_markets and
+                  what_to_sell in self._available_markets[buy]):
+            market = buy + '_' + what_to_sell
+            action = 'sell'
+        else:
+            raise ValueError(
+                'No market available for %r -> %r' % (
+                    what_to_sell, buy))
+
+        # [todo]: make sure this is correct!!!
+        current_rate, minr, maxr = self.get_current_rate(market)
+
+        target_rate = (
+            current_rate * suggestion_factor if action == 'buy' else
+            current_rate / suggestion_factor)
+
+        log.info('> current rate is %f(%f..%f), target is %f',
+                 current_rate, minr, maxr, target_rate)
+
+        return {'market': market,
+                'action': action,
+                'rate': target_rate,
+                'amount': (amount if action == 'sell' else
+                           amount / target_rate)}
+
+
 def ema(data, alpha):
     ''' returns eponential moving average
     '''
@@ -397,22 +502,20 @@ class Api:
 
     def check_order(self, *,
                     sell: tuple, buy: str,
-                    suggestion_factor: float) -> float:
+                    suggestion_factor: float,
+                    balances: dict) -> float:
         amount, what_to_sell = sell
         log.info('try to sell %f %r for %r', amount, what_to_sell, buy)# todo: correct
 
-        def check_balance():
-            balances = self.get_balances()
-            if not what_to_sell in balances:
-                raise ValueError(
-                    'You do not have %r to sell' % what_to_sell)
-            log.info('> you have %f %r', balances[what_to_sell], what_to_sell)
-            if balances[what_to_sell] < amount:
-                raise ValueError(
-                    'You do not have enough %r to sell (just %f)' % (
-                        what_to_sell, balances[what_to_sell]))
+        if not what_to_sell in balances:
+            raise ValueError(
+                'You do not have %r to sell' % what_to_sell)
+        log.info('> you have %f %r', balances[what_to_sell], what_to_sell)
+        if balances[what_to_sell] < amount:
+            raise ValueError(
+                'You do not have enough %r to sell (just %f)' % (
+                    what_to_sell, balances[what_to_sell]))
 
-        check_balance()  # todo: cached balance?
         if (what_to_sell in self.get_coins() and
                 buy in self.get_coins()[what_to_sell]):
             market = what_to_sell + '_' + buy

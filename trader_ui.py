@@ -240,13 +240,11 @@ class Trader(QtGui.QMainWindow):
         self._config = self._load_config('config')
 
         self._trader_api = self._get_trader()
-        self._balances = {}
+        self._data = trader.TraderData()
         self._balances_dirty = True
         self._markets = {}
-        self._order_history = []
         self._available_markets = None
         self._available_coins = None
-        self._eur_price = None
 
         self._update_timer = QtCore.QTimer(self)
         self._update_timer.timeout.connect(self._update_timer_timeout)
@@ -305,8 +303,8 @@ class Trader(QtGui.QMainWindow):
             # todo: update
             self._put_task(self._threadsafe_fetch_markets, Priorities.Init)
 
-        if (not self._order_history or
-            not self._balances or
+        if (not self._data.trade_history() or
+            not self._data.balances() or
                 self._balances_dirty):
             self._balances_dirty = False
             self._put_task(self._threadsafe_fetch_orders, Priorities.Balances)
@@ -351,26 +349,17 @@ class Trader(QtGui.QMainWindow):
         self._put_task(None, Priorities.Quit)
         self._worker_thread.join()
         t1 = time.time()
-        self_persist()
+        self._persist()
         log.info('saving trade history took %.2fs', time.time() - t1)
         log.info('bye bye!')
 
     def _load(self):
-        try:
-            with open('personal.json') as f:
-                personal_data = json.load(f)
-                self._balances = personal_data['balances']
-                self._handle_order_data([], personal_data['trade_history'])
-        except FileNotFoundError:
-            pass
+        self._data.load()
+        self._handle_order_data()
 
     def _persist(self):
         for _, m in self._markets.items():
             m.shutdown()
-#        os.makedirs('personal', exist_ok=True)
-        with open('personal.json', 'w') as f:
-            json.dump({'balances': self._balances,
-                       'trade_history': self._order_history}, f)
 
 
     def _put_task(self, fn, priority):
@@ -426,8 +415,7 @@ class Trader(QtGui.QMainWindow):
         log.info('create order from: sell=%r buy=%r speed_factor=%f',
                  sell, buy, speed_factor)
         try:
-            order = self._trader_api.check_order(
-                sell=sell, buy=buy,
+            order = self._data.suggest_order(sell=sell, buy=buy,
                 suggestion_factor=speed_factor)
         except (RuntimeError, ValueError) as exc:
             log.error('cannot place order: %s', exc)
@@ -481,7 +469,7 @@ class Trader(QtGui.QMainWindow):
         selected = self.cb_trade_curr_sell.itemText(index)
         if not selected: return
         log.info('selected currency to sell: %r', selected)
-        self.le_trade_amount.setText(str(self._balances[selected]))
+        self.le_trade_amount.setText(str(self._data.balances(selected)))
 
     def _cb_trade_curr_buy_currentIndexChanged(self, index):
         #self.pb_place_order.setEnabled(False)
@@ -531,16 +519,13 @@ class Trader(QtGui.QMainWindow):
     def _threadsafe_fetch_balances(self):
         if not self._trader_api: return
         log.info("update balances..")
+        self._data.update_balances(self._trader_api)
+        self._data.update_eur()
         QtCore.QMetaObject.invokeMethod(
-            self, "_handle_balance_data", QtCore.Qt.QueuedConnection,
-            QtCore.Q_ARG(dict, self._trader_api.get_balances()),
-            QtCore.Q_ARG(float, trader.get_EUR()),
-        )
+            self, "_handle_balance_data", QtCore.Qt.QueuedConnection)
 
-    @QtCore.pyqtSlot(dict, float)
-    def _handle_balance_data(self, balances, eur_price):
-        self._balances = balances
-        self._eur_price = eur_price
+    @QtCore.pyqtSlot()
+    def _handle_balance_data(self):
         self._display_balances()
 
     def _threadsafe_display_balances(self):
@@ -549,22 +534,22 @@ class Trader(QtGui.QMainWindow):
 
     @QtCore.pyqtSlot()
     def _display_balances(self):
-        if not self._balances: return
+        if not self._data.balances(): return
 
-        for m in self._balances:
+        for m in self._data.balances():
             if m == 'BTC': continue
             self._add_market('BTC_' + m, self.lst_markets)
 
-        self._set_cb_items(self.cb_trade_curr_sell, self._balances.keys())
+        self._set_cb_items(self.cb_trade_curr_sell, self._data.balances().keys())
 
         self.tbl_balances.setSortingEnabled(False)
-        self.tbl_balances.setRowCount(len(self._balances))
+        self.tbl_balances.setRowCount(len(self._data.balances()))
 
         xbt_usd_rate = self._markets['USDT_BTC'].current_rate()
         btc_total = 0.
         eur_total = 0.
         i = 0
-        for c, a in self._balances.items():
+        for c, a in self._data.balances().items():
             _m = 'BTC_%s' % c
             _btc_rate = (
                 1. if c == 'BTC' else
@@ -592,20 +577,16 @@ class Trader(QtGui.QMainWindow):
     def _threadsafe_fetch_orders(self):
         if not self._trader_api: return
         log.info("update own orders..")
-        last_order_time = self._order_history[-1]['time'] if self._order_history else 0
+        self._data.update_trade_history(self._trader_api)
+        self._data.update_open_orders(self._trader_api)
         QtCore.QMetaObject.invokeMethod(
-            self, "_handle_order_data", QtCore.Qt.QueuedConnection,
-            QtCore.Q_ARG(dict, self._trader_api.get_open_orders()),
-            QtCore.Q_ARG(dict, self._trader_api.get_order_history()),
-        )
+            self, "_handle_order_data", QtCore.Qt.QueuedConnection)
 
-    @QtCore.pyqtSlot(dict, dict)
-    def _handle_order_data(self, orders, order_history):
-        self._order_history = trader.merge_time_list(
-            self._order_history, order_history)
-        self._fill_order_table(self.tbl_open_orders, orders, cancel_button=True)
-        self._fill_order_table(self.tbl_order_history, order_history)
-        for m, history in order_history.items():
+    @QtCore.pyqtSlot()
+    def _handle_order_data(self):
+        self._fill_order_table(self.tbl_open_orders, self._data.open_orders(), cancel_button=True)
+        self._fill_order_table(self.tbl_order_history, self._data.trade_history())
+        for m, history in self._data.trade_history().items():
             for h in history:
                 if h['type'] == 'buy' and m in self._markets:
                     self._markets[m].set_marker(
