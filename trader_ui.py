@@ -584,6 +584,7 @@ class Trader(QtGui.QMainWindow):
     def _threadsafe_fetch_orders(self):
         if not self._trader_api: return
         log.info("update own orders..")
+
         self._data.update_trade_history(self._trader_api)
         self._data.update_open_orders(self._trader_api)
         QtCore.QMetaObject.invokeMethod(
