@@ -17,6 +17,7 @@ import hashlib
 import socket
 import logging as log
 import time
+import threading
 
 ALLOW_CACHED_VALUES = 'ALLOW'  # 'NEVER', 'FORCE'
 MOST_RECENTLY = 9999999999
@@ -63,35 +64,49 @@ def set_proxies(proxies):
 
 class TraderData:
     def __init__(self):
+        self._last_thread = None
         self._balances = {}
         self._trade_history = {}
         self._eur_price = 0.
         self._open_orders = []
         self._available_markets = {}
+        self._market_history = {}
 
-    def _check_thread(self):
-        pass
+    def _called_from_same_thread(self):
+        thread_id = threading.current_thread().ident
+        if not self._last_thread:
+            self._last_thread = thread_id
+        return self._last_thread == thread_id
 
-    def update_available_markets(self):
-        self._check_thread()
+    def create_trade_history(self, market):
+        new_market = TradeHistory(market)
+        self._market_history[market] = new_market
+        return new_market
+
+    def update_available_markets(self, api):
+        assert(self._called_from_same_thread())
+        ticker = api.get_ticker()
+        self._available_markets = api.extract_coin_data(ticker)
 
     def update_balances(self, api):
-        self._check_thread()
+        assert(self._called_from_same_thread())
         self._balances = api.get_balances()
 
     def update_trade_history(self, api):
-        self._check_thread()
-        last_order_time = (self._trade_history[-1]['time']
-                           if self._trade_history else 0)
-        self._trade_history = merge_time_list(
-            self._trade_history, api.get_order_history())
+        assert(self._called_from_same_thread())
+        # trade history is not a list!
+        #last_order_time = (self._trade_history[-1]['time']
+        #                   if self._trade_history else 0)
+        #self._trade_history = merge_time_list(
+        #    self._trade_history, api.get_order_history())
+        self._trade_history = api.get_order_history()
 
     def update_open_orders(self, api):
-        self._check_thread()
+        assert(self._called_from_same_thread())
         self._open_orders = api.get_open_orders()
 
     def update_eur(self):
-        self._check_thread()
+        assert(self._called_from_same_thread())
         self._eur_price = get_EUR()
 
     def balances(self, market=None):
@@ -102,6 +117,9 @@ class TraderData:
 
     def open_orders(self):
         return self._open_orders
+
+    def eur_price(self):
+        return self._eur_price
 
     def load(self):
         try:
@@ -118,9 +136,18 @@ class TraderData:
             json.dump({'balances': self._balances,
                        'trade_history': self._trade_history}, f)
 
+    def get_current_rate(self, market):
+        # ==> move to TraderStrategy
+        try:
+            total, amount, minr, maxr = sum_trades(self._market_history[market].data()[-50:])
+        except KeyError as exc:
+            raise ValueError('market %r not subscribed' % market) from exc
+        return total / amount, minr, maxr
+
     def suggest_order(self, *,
                     sell: tuple, buy: str,
                     suggestion_factor: float) -> dict:
+        # ==> move to TraderStrategy
         if not self._balances or not self._available_markets:
             raise RuntimeError('not ready')
 
@@ -130,7 +157,7 @@ class TraderData:
         if not what_to_sell in self._balances:
             raise ValueError(
                 'You do not have %r to sell' % what_to_sell)
-        log.info('> you have %f %r', balances[what_to_sell], what_to_sell)
+        log.info('> you have %f %r', self._balances[what_to_sell], what_to_sell)
         if self._balances[what_to_sell] < amount:
             raise ValueError(
                 'You do not have enough %r to sell (just %f)' % (
@@ -195,6 +222,12 @@ class TradeHistory:
         self._step_size_sec = step_size_sec
         self._update_threshold_sec = 60.
         self._history_max_duration = 24 * 3600
+
+    def name(self):
+        return self._market
+
+    def friendly_name(self):
+        return '/'.join(get_full_name(c) for c in self._market.split('_'))
 
     def load(self):
         try:
@@ -338,21 +371,36 @@ def get_unique_name(data: dict) -> str:
 
 def translate_trade(trade):
     date = datetime.strptime(trade['date'], '%Y-%m-%d %H:%M:%S')
-    return {#'date': date,
+    return {'date': trade['date'],
             'time': time.mktime(date.timetuple()) - time.altzone,
-            'tradeID': trade['tradeID'],
-            'globalTradeID': trade['globalTradeID'],
+            'tradeID': int(trade['tradeID']),
+            'globalTradeID': int(trade['globalTradeID']),
             'total': float(trade['total']),
             'amount': float(trade['amount']),
             'rate': float(trade['rate']),
             'type': trade['type']}
 
 
+def translate_order(order):
+    date = datetime.strptime(order['date'], '%Y-%m-%d %H:%M:%S')
+    return {'date': order['date'],
+            'time': time.mktime(date.timetuple()) - time.altzone,
+            'category': order['category'],
+            'tradeID': int(order['tradeID']),
+            'globalTradeID': int(order['globalTradeID']),
+            'orderNumber': int(order['globalTradeID']),
+            'total': float(order['total']),
+            'amount': float(order['amount']),
+            'rate': float(order['rate']),
+            'fee': float(order['fee']),
+            'type': order['type']}
+
+
 def translate_ticker(val):
     return {'baseVolume': float(val['baseVolume']),
             'high24hr': float(val['high24hr']),
             'highestBid': float(val['highestBid']),
-            'id': val['id'],
+            'id': int(val['id']),
             'isFrozen': val['id'] != '0',
             'last': float(val['last']),
             'low24hr': float(val['low24hr']),
@@ -478,10 +526,11 @@ class Api:
                 if o}
 
     def get_order_history(self) -> dict:
-        return self._run_private_command(
-            'returnTradeHistory', {'currencyPair': 'all',
-                                   'start': 0,
-                                   'end': MOST_RECENTLY})
+        return {c: [translate_order(o) for o in order_list]
+                for c, order_list in self._run_private_command(
+                    'returnTradeHistory', {'currencyPair': 'all',
+                                           'start': 0,
+                                           'end': MOST_RECENTLY}).items()}
 
     @staticmethod
     def extract_coin_data(ticker):
