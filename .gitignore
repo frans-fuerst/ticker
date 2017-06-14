@@ -5,6 +5,7 @@ last_markets
 orders
 k
 data*
+*.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
