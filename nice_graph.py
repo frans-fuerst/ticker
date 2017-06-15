@@ -27,7 +27,6 @@ class DataPlot(qwt.QwtPlot):
 
         self.axisWidget(qwt.QwtPlot.yLeft).scaleDraw().setMinimumExtent(100)
 
-
     def set_data(self, datax, datay, pen):
         curve = qwt.QwtPlotCurve("Curve 1")
         curve.setData(datax, datay)
@@ -55,22 +54,6 @@ def clear(data, factor):
     return result
 
 
-def ema(data, a):
-    n = data[0]
-    result = []
-    an = 1 - a
-    for x in data:
-        n = a * n + an * x
-        result.append(n)
-    return result
-
-
-def vema(dataa, datab, a):
-    smooth_dataa = ema(dataa, a)
-    smooth_datab = ema(datab, a)
-    return [a / b for a, b in zip(smooth_dataa, smooth_datab)]
-
-
 class GraphUI(QtGui.QWidget):
 
     def __init__(self):
@@ -95,14 +78,8 @@ class GraphUI(QtGui.QWidget):
         rates = [e[0] / e[1] for e in data]
         times = [e[2] for e in data]
 
-        rates_clean = clear(rates, 1.01)
 
-        rates_maverage = ema(rates, 0.99)
-        rates_vema = vema(totals, amounts, 0.98)
-
-        rates_old = trader.get_maverage(trader.clean(rates, 1.1), 0.02)
-        rates_old = trader.get_maverage(rates, 0.02)
-
+        rates_vema = trader.vema(totals, amounts, 0.02)
 
         plot = DataPlot()
 
@@ -113,7 +90,7 @@ class GraphUI(QtGui.QWidget):
         plot.set_data(times, rates, Qt.QPen(Qt.Qt.black, 1, Qt.Qt.SolidLine))
         #        plot.set_data(times, rates_clean, Qt.QPen(Qt.Qt.black, 2, Qt.Qt.SolidLine))
         #        plot.set_data(times, rates_maverage, Qt.QPen(Qt.Qt.blue, 2, Qt.Qt.SolidLine))
-        plot.set_data(times, rates_old, Qt.QPen(Qt.Qt.blue, 2, Qt.Qt.SolidLine))
+        #plot.set_data(times, rates_old, Qt.QPen(Qt.Qt.blue, 2, Qt.Qt.SolidLine))
         plot.set_data(times, rates_vema, Qt.QPen(Qt.Qt.red, 2, Qt.Qt.SolidLine))
 
         m = max(rates)
