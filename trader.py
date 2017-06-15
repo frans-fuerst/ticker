@@ -342,12 +342,12 @@ class TradeHistory:
                        if data[0]['time'] < self._hdata[0]['time'] else
                        merge(self._hdata, data))
 
-    def get_plot_data(self, ema_factor=0.005):
+    def get_plot_data(self, ema_factor=0.005, cut=50):
         totals = [e['total'] for e in self._hdata]
         amounts = [e['amount'] for e in self._hdata]
         times = [e['time'] for e in self._hdata]
         rates_vema = vema(totals, amounts, ema_factor)
-        return times[50:], rates_vema[50:]
+        return times[cut:], rates_vema[cut:]
 
 
 
