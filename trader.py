@@ -217,12 +217,15 @@ def merge_time_list(list1, list2):
 
 
 class TradeHistory:
-    def __init__(self, market, step_size_sec=3600):
+    def __init__(self, market, *,
+                 step_size_sec=3600,
+                 history_max_duration=24*3600,
+                 update_threshold=60):
         self._market = market
         self._hdata = []
         self._step_size_sec = step_size_sec
-        self._update_threshold_sec = 60.
-        self._history_max_duration = 24 * 3600
+        self._update_threshold_sec = update_threshold
+        self._history_max_duration = history_max_duration
 
     def name(self):
         return self._market
@@ -230,18 +233,24 @@ class TradeHistory:
     def friendly_name(self):
         return '/'.join(get_full_name(c) for c in self._market.split('_'))
 
-    def load(self):
+    def load(self, directory='.'):
         try:
-            with open('trade_history-%s.json' % self._market) as f:
+            filename = os.path.join(
+                directory, 'trade_history-%s.json' % self._market)
+            with open(filename) as f:
                 self._hdata = json.load(f)
         except FileNotFoundError:
             pass
-        except json.JSONDecodeError as exc:
-            log.warning(
+        except ValueError as exc:
+            log.error(
                 'could not load TradeHistory for %r: %r', self._market, exc)
+            raise
 
-    def save(self):
-        with open('trade_history-%s.json' % self._market, 'w') as f:
+    def save(self, directory='.'):
+        filename = os.path.join(
+            directory, 'trade_history-%s.json' % self._market)
+        os.makedirs(directory, exist_ok=True)
+        with open(filename, 'w') as f:
             json.dump(self._hdata, f)
 
     def clear(self):
@@ -254,20 +263,21 @@ class TradeHistory:
         return 'TradeHistory(%r, duration=%.1f, len=%d)' % (
             self._market, self.get_duration() / 60, len(self._hdata))
 
-    def fetch_next(self):
+    def fetch_next(self, max_duration=None, only_old=False):
         current_time = time.time()
         log.debug('update trade history for %r after %d seconds',
                  self._market, current_time - self.last_time())
 
-        if current_time - self.last_time() > 6 * 3600:
+        if self._hdata and current_time - self.last_time() > 6 * 3600:
             # last update too long ago to fill the gap (for now)
-            self.clear()
+            #self.clear()
+            log.warning('big gap')
 
         if not self._hdata:
             log.debug('fetch_next: there is no data yet - fetch an hour')
-            start = current_time - self._step_size_sec
+            start = 0 if max_duration else current_time - self._step_size_sec
             end = MOST_RECENTLY
-        elif current_time - self.last_time() > self._update_threshold_sec:
+        elif not only_old and current_time - self.last_time() > self._update_threshold_sec:
             log.debug('fetch_next: more than a couple of seconds have passed '
                       'since last update - do an update now')
             start = self.last_time()
@@ -275,14 +285,20 @@ class TradeHistory:
         elif current_time - self.first_time() < self._history_max_duration:
             log.debug("fetch_next: we don't need to update recent parts of the "
                       "graph - fetch older data instead.")
-            start = self.first_time() - self._step_size_sec
+            start = 0 if max_duration else self.first_time() - self._step_size_sec
             end = self.first_time()
         else:
             log.debug("fetch_next: no need to update anything - just exit")
             return False
 
-        self._attach_data(Api.get_trade_history(
-            *self._market.split('_'), start, end))
+        try:
+            self._attach_data(Api.get_trade_history(
+                *self._market.split('_'), start, end))
+        except ValueError:
+            log.warning(
+                'lists are discontiguous after update (%.2fh)- clear data',
+                (current_time - self.last_time()) / 3600)
+            self.clear()
 
         return True
 
@@ -471,12 +487,16 @@ class Api:
     @staticmethod
     def _get_trade_history(currency_pair, start=None, stop=None) -> dict:
         req = {'currencyPair': currency_pair}
-        if start:
-            req.update({'start': start if stop else time.time() - start,
-                        'end': stop if stop else MOST_RECENTLY})
-        return list(reversed([translate_dataset(t)
-                for t in Api._run_public_command(
-                    'returnTradeHistory', req)]))
+        if start is not None:
+            if start == 0:
+                start = time.time() - (360*24*3600)
+            req.update({'start': start if stop is not None else time.time() - start,
+                        'end': stop if stop is not None else MOST_RECENTLY})
+        translated = (translate_dataset(t) for t in Api._run_public_command(
+            'returnTradeHistory', req))
+        cleaned = (e for e in translated
+                   if e['amount'] > 0.000001 and e['total'] > 0.000001)
+        return list(reversed(list(cleaned)))
 
     @staticmethod
     def get_trade_history(primary, coin, start, stop=None) -> dict:
