@@ -40,25 +40,13 @@ class DataPlot(qwt.QwtPlot):
         self.replot()
 
 
-def clear(data, factor):
-    if not data: return data
-    fr = 1 / factor
-    result = [data[0]]
-    for i in range(len(data) - 2):
-        l, m, r = data[i:i+3]
-        a = (l + r) / 2
-        q = m / a if a != 0. else 1.0
-        e = m if fr < q < factor else a
-        result.append(e)
-    result.append(data[-1])
-    return result
-
-
 class GraphUI(QtGui.QWidget):
 
     def __init__(self):
         super().__init__()
         self.setLayout(QtGui.QVBoxLayout())
+
+        now = time.time()
 
         self.th = trader.TradeHistory('BTC_ETH', step_size_sec=6*3600)
         self.th.load()
@@ -66,40 +54,47 @@ class GraphUI(QtGui.QWidget):
             self.th.fetch_next()
             self.th.save()
 
-        print(self.th.count(), self.th.get_duration()/3600)
+#        print(self.th.count(), self.th.get_duration()/3600)
 
-        data = self.th.data() [-10000:]
+        data = self.th.data() #[-10000:]
 
-        [print(d) for d in data]
+#        [print(d) for d in data]
 
         print((data[-1]['time']-data[0]['time']) / 3600)
 
         totals = [e['total'] for e in data]
         amounts = [e['amount'] for e in data]
         rates = [e['total'] / e['amount'] for e in data]
-        times = [e['time'] - time.time() for e in data]
-        full = [(e['time'] - time.time(), e['total'], e['amount'], e['total'] / e['amount']) for e in data]
+        times = [e['time'] - now for e in data]
+        full = [(e['time'] - now, e['total'], e['amount'], e['total'] / e['amount']) for e in data]
 
-        [print('%.2f, %11.8f, %11.8f, %9.9f' % d) for d in full]
+#        [print('%.2f, %11.8f, %11.8f, %9.9f' % d) for d in full]
 
-        rates_vema1 = trader.vema(totals, amounts, 0.00002)
-        rates_vema2 = trader.vema(totals, amounts, 0.0002)
+        rates_vema_slow = trader.vema(totals, amounts, 0.001)
+        rates_vema_fast = trader.vema(totals, amounts, 0.004)
+
+        candlestick_data = self.th.rate_buckets()
+        times2 = [e['time'] - now for e in candlestick_data]
+        rates2 = [e['total_sell'] / e['amount_sell'] for e in candlestick_data]
+        amounts2 = [e['amount_sell'] for e in candlestick_data]
+        totals2 = [e['total_sell'] for e in candlestick_data]
+
+        rates_vema_fast = trader.vema(totals2, amounts2, 0.1)
+        rates_vema_slow = trader.vema(totals2, amounts2, 0.1)
+
 
         plot = DataPlot()
-
         self.layout().addWidget(plot)
-
         self.setGeometry(200, 200, 1100, 650)
 
-        plot.set_data(times, rates, Qt.QPen(Qt.Qt.black, 1, Qt.Qt.SolidLine))
-        #        plot.set_data(times, rates_clean, Qt.QPen(Qt.Qt.black, 2, Qt.Qt.SolidLine))
-        #        plot.set_data(times, rates_maverage, Qt.QPen(Qt.Qt.blue, 2, Qt.Qt.SolidLine))
-        #plot.set_data(times, rates_old, Qt.QPen(Qt.Qt.blue, 2, Qt.Qt.SolidLine))
-        plot.set_data(times, rates_vema1, Qt.QPen(Qt.Qt.red, 2, Qt.Qt.SolidLine))
-        plot.set_data(times, rates_vema2, Qt.QPen(Qt.Qt.blue, 2, Qt.Qt.SolidLine))
+        plot.set_data(times, rates, Qt.QPen(Qt.Qt.gray, 1, Qt.Qt.SolidLine))
+
+        plot.set_data(times2, rates2, Qt.QPen(Qt.Qt.black, 2, Qt.Qt.SolidLine))
+        plot.set_data(times2, rates_vema_fast, Qt.QPen(Qt.Qt.red, 2, Qt.Qt.SolidLine))
+        plot.set_data(times2, rates_vema_slow, Qt.QPen(Qt.Qt.blue, 2, Qt.Qt.SolidLine))
 
         m = max(rates)
-        plot.set_y_scale(0.8 * m, m)
+#        plot.set_y_scale(0.8 * m, m)
         plot.redraw()
 
         self.show()

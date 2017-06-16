@@ -378,14 +378,14 @@ class TradeHistory:
                                    'amount_buy': amounts_buy,
                                    'total_sell': totals_sell,
                                    'amount_sell': amounts_sell,
-                                   'open_buy': 0,
-                                   'open_sell': 0,
-                                   'close_buy': 0,
-                                   'close_sell': 0,
-                                   'high_buy': 0,
-                                   'high_sell': 0,
-                                   'low_buy': 0,
-                                   'low_sell': 0,
+                                   #'open_buy': 0,
+                                   #'open_sell': 0,
+                                   #'close_buy': 0,
+                                   #'close_sell': 0,
+                                   #'high_buy': 0,
+                                   #'high_sell': 0,
+                                   #'low_buy': 0,
+                                   #'low_sell': 0,
                                    })
                 totals_buy = amounts_buy = totals_sell = amounts_sell = 0.
                 current = t
@@ -399,6 +399,14 @@ class TradeHistory:
 
         return result
 
+def expand_bucket(bucket):
+    amount = bucket['amount_buy'] + bucket['amount_sell']
+    total = bucket['total_buy'] + bucket['total_sell']
+    return {**bucket, **{
+        'amount': amount,
+        'total': total,
+        'rate': total / amount,
+    }}
 
 def get_plot_data(data, ema_factor):
     totals = [e['total'] for e in data]
