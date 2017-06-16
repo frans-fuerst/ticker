@@ -22,7 +22,7 @@ class DataPlot(qwt.QwtPlot):
     def __init__(self, *args):
         qwt.QwtPlot.__init__(self, *args)
 
-        self.enableAxis(qwt.QwtPlot.xBottom, False)
+        self.enableAxis(qwt.QwtPlot.xBottom, True)
         self.enableAxis(qwt.QwtPlot.yLeft, True)
 
         self.axisWidget(qwt.QwtPlot.yLeft).scaleDraw().setMinimumExtent(100)
@@ -60,26 +60,30 @@ class GraphUI(QtGui.QWidget):
         super().__init__()
         self.setLayout(QtGui.QVBoxLayout())
 
-        try:
-            data = json.load(open('data'))
-        except FileNotFoundError:
-            history = trader.Api.get_trade_history(
-                primary='BTC', coin='XMR', duration=6 * 3600) #, duration=3600)
-            data = [(float(e['total']),
-                     float(e['amount']),
-                     time.mktime(e['date'].timetuple()) - time.time())
-                    for e in history]
-            json.dump(data, open('data', 'w'))
+        self.th = trader.TradeHistory('BTC_ETH', step_size_sec=6*3600)
+        self.th.load()
+        if self.th.get_duration() < 10 * 3600:
+            self.th.fetch_next()
+            self.th.save()
 
- #       data = data[28:200]
+        print(self.th.count(), self.th.get_duration()/3600)
 
-        totals = [e[0] for e in data]
-        amounts = [e[1] for e in data]
-        rates = [e[0] / e[1] for e in data]
-        times = [e[2] for e in data]
+        data = self.th.data() [-10000:]
 
+        [print(d) for d in data]
 
-        rates_vema = trader.vema(totals, amounts, 0.02)
+        print((data[-1]['time']-data[0]['time']) / 3600)
+
+        totals = [e['total'] for e in data]
+        amounts = [e['amount'] for e in data]
+        rates = [e['total'] / e['amount'] for e in data]
+        times = [e['time'] - time.time() for e in data]
+        full = [(e['time'] - time.time(), e['total'], e['amount'], e['total'] / e['amount']) for e in data]
+
+        [print('%.2f, %11.8f, %11.8f, %9.9f' % d) for d in full]
+
+        rates_vema1 = trader.vema(totals, amounts, 0.00002)
+        rates_vema2 = trader.vema(totals, amounts, 0.0002)
 
         plot = DataPlot()
 
@@ -91,10 +95,11 @@ class GraphUI(QtGui.QWidget):
         #        plot.set_data(times, rates_clean, Qt.QPen(Qt.Qt.black, 2, Qt.Qt.SolidLine))
         #        plot.set_data(times, rates_maverage, Qt.QPen(Qt.Qt.blue, 2, Qt.Qt.SolidLine))
         #plot.set_data(times, rates_old, Qt.QPen(Qt.Qt.blue, 2, Qt.Qt.SolidLine))
-        plot.set_data(times, rates_vema, Qt.QPen(Qt.Qt.red, 2, Qt.Qt.SolidLine))
+        plot.set_data(times, rates_vema1, Qt.QPen(Qt.Qt.red, 2, Qt.Qt.SolidLine))
+        plot.set_data(times, rates_vema2, Qt.QPen(Qt.Qt.blue, 2, Qt.Qt.SolidLine))
 
         m = max(rates)
-        plot.set_y_scale(0.9 * m, m)
+        plot.set_y_scale(0.8 * m, m)
         plot.redraw()
 
         self.show()
