@@ -41,21 +41,48 @@ def start_server(port):
     http_server = socketserver.TCPServer(('', port), HistoryServer)
     http_server.serve_forever()
 
+def init():
+    result = {}
+    for m, secondaries in trader.Api.get_ticker().items():
+        if not m.startswith('BTC_'): continue
+        coin = m.split('_')[1]
+        if trader.get_full_name(coin).startswith('unknown'): continue
+        if coin not in {'XRP', 'ETH', 'ETC', 'XMR', 'XRP', 'DOGE'}: continue
+        print(m)
+        result[m] = trader.TradeHistory(
+            m,
+            step_size_sec=4*3600,
+            history_max_duration=10*365*24*3600,
+            update_threshold=5*3600)
+        result[m].load('server')
+    return result
 
 def serve(interval):
 
     # start_server(8080)
+    markets = init()
+    print('--')
     while True:
-        try:
-            for p, secondaries in trader.Api.get_markets().items():
-                for s in secondaries:
-                    print('%s_%s' % (p, s))
-                    trader.Api.get_trade_history(p, s, 5*60*60)
-            log.info('all coins fetched')
-            break
-        except trader.ServerError as exc:
-            log.warning('Could not communicate with Trading server (%r)', exc)
-        time.sleep(interval)
+        t1 = time.time()
+        print('fetch..')
+        for m, th in markets.items():
+            print(m)
+            count_before = th.count()
+            tu = time.time()
+            for _ in range(3):
+                try:
+                    th.fetch_next(-1, only_old=True)
+                    break
+                except trader.ServerError as exc:
+                    print('(WW) %r' % exc)
+            print('#%d(+%d)/%.2fh took %.1fsec' % (
+                th.count(), th.count() - count_before,
+                th.get_duration() / 3600, time.time() - tu))
+            th.save('server')
+            time.sleep(0.2)
+        t2 = time.time()
+        print('update took %.1fs' % (t2 - t1))
+
 
 
 def get_args() -> dict:
