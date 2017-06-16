@@ -75,10 +75,10 @@ def try_market(m):
                 best = (i, j, b, b, x, t, ema_slow, ema_fast, ema_fast > ema_slow)
                 print('i%d/j%d, %.3f%% C1:%.4f C2:%.4f #%d slow=%.6f fast=%.6f %r' % best)
 
-for f in os.listdir():
-    if not (f.startswith('trade_history') and f.endswith('.json')):
-        continue
-    m = f.split('.')[0].split('-')[1]
-    try_market(m)
+#for f in os.listdir():
+    #if not (f.startswith('trade_history') and f.endswith('.json')):
+        #continue
+    #m = f.split('.')[0].split('-')[1]
+    #try_market(m)
 
-#try_market('BTC_XRP')
+try_market('BTC_XRP')
