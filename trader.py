@@ -365,6 +365,39 @@ class TradeHistory:
         rates_vema = vema(totals, amounts, ema_factor)
         return times[cut:], rates_vema[cut:]
 
+    def rate_buckets(self, size=5*60):
+        result = []
+        current = None
+        totals_buy = amounts_buy = totals_sell = amounts_sell = 0.
+        for d in self._hdata:
+            t = int(d['time'] / size)
+            if t != current:
+                if current:
+                    result.append({'time': current*size,
+                                   'total_buy': totals_buy,
+                                   'amount_buy': amounts_buy,
+                                   'total_sell': totals_sell,
+                                   'amount_sell': amounts_sell,
+                                   'open_buy': 0,
+                                   'open_sell': 0,
+                                   'close_buy': 0,
+                                   'close_sell': 0,
+                                   'high_buy': 0,
+                                   'high_sell': 0,
+                                   'low_buy': 0,
+                                   'low_sell': 0,
+                                   })
+                totals_buy = amounts_buy = totals_sell = amounts_sell = 0.
+                current = t
+            if d['type'] == 'buy':
+                totals_buy += d['total']
+                amounts_buy += d['amount']
+            else:
+                assert d['type'] == 'sell'
+                totals_sell += d['total']
+                amounts_sell += d['amount']
+
+        return result
 
 
 def get_plot_data(data, ema_factor):
