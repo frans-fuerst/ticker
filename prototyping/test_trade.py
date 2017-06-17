@@ -7,7 +7,6 @@ import trader
 import utils
 
 fee = 0.9975
-GLOBAL = []
 
 def random_trade(th):
     amount_BTC = 100.
@@ -31,12 +30,14 @@ def trade(times, totals, amounts, rates, alpha_ema_slow, alpha_ema_fast):
     ma_slow = trader.vema(totals, amounts, alpha_ema_slow)
     ma_fast = trader.vema(totals, amounts, alpha_ema_fast)
 
-    w = utils.GraphUI()
-    w.set_data(times, rates)
-    w.set_data(times, ma_slow, 'fat_blue')
-    w.set_data(times, ma_fast, 'fat_red')
-    w.show()
-    GLOBAL.append(w)
+    if True:
+        w = utils.GraphUI()
+        w.set_data(times, rates)
+        w.set_data(times, ma_slow, 'fat_blue')
+        w.set_data(times, ma_fast, 'fat_red')
+        w.show()
+    else:
+        w = None
 
     trades = 0
     last_C1 = 0
@@ -44,8 +45,8 @@ def trade(times, totals, amounts, rates, alpha_ema_slow, alpha_ema_fast):
     for i, d in enumerate(rates):
         if i == 0: continue
         # verkaufen, wenn fast MA
-        action = ('sell' if ma_fast[i] > ma_slow[i] and ma_fast[i - 1] < ma_slow[i - 1] else
-                  'buy' if ma_fast[i] < ma_slow[i] and ma_fast[i - 1] > ma_slow[i - 1] else
+        action = ('buy' if ma_fast[i] >= ma_slow[i] and ma_fast[i - 1] < ma_slow[i - 1] else
+                  'sell' if ma_fast[i] <= ma_slow[i] and ma_fast[i - 1] > ma_slow[i - 1] else
                   'none')
         if action == 'none': continue
         if action == 'buy':
@@ -58,14 +59,16 @@ def trade(times, totals, amounts, rates, alpha_ema_slow, alpha_ema_fast):
             new_c1 = amount_C2 * d * fee
             amount_C1 = new_c1
             last_C2, amount_C2 = amount_C2, 0.
+        if True and w:
+            w.add_vmarker(times[i], 'red' if action == 'sell' else 'green')
+            w.add_hmarker(d, 'red' if action == 'sell' else 'green')
         trades += 1
-#        print(i, d['time'], amount_BTC, amount_XMR, action, d['rate'])
+        print('%.4d %.7d %9.2f %11.2f %11.9f %s' % (
+            i, times[i], amount_C1, amount_C2, d, action))
     return last_C1, last_C2, trades
 
 def try_market(m):
     print(m)
-    #btc_xmr_th = trader.TradeHistory('BTC_XMR')
-    #btc_xmr_th = trader.TradeHistory('BTC_ARDR')  # 0.0008 / 0.004
     th = trader.TradeHistory(m)  # 0.0008 / 0.004
     th.load()
 
@@ -77,11 +80,11 @@ def try_market(m):
                 break
             except trader.ServerError:
                 pass
-        th.save()
+#        th.save()
 
     now = time.time()
-    cdata = [trader.expand_bucket(b) for b in th.rate_buckets()]
-    times = [e['time'] - now for e in cdata]
+    cdata = [trader.expand_bucket(b) for b in th.rate_buckets(60)] #[-500:]
+    times = [(e['time'] - now) / 3600 for e in cdata]
     rates = [e['rate'] for e in cdata]
     amounts = [e['amount_sell'] for e in cdata]
     totals = [e['total_sell'] for e in cdata]
@@ -92,29 +95,34 @@ def try_market(m):
     if False:
 
         bmax = 0
-        stepsi = 25
-        stepsj = 25
+        stepsi = 50
+        stepsj = 30
         for i in range(stepsi):
             for j in range(stepsj):
                 ema_fast = 0.1 / stepsi * i
-                ema_slow = 0.1 / stepsj * j
+                ema_slow = ema_fast / stepsj * j
                 b, x, t = trade(times, totals, amounts, rates, ema_slow, ema_fast)
                 if bmax < b:
                     bmax = b
-                    best = (i, j, b, b, x, t, ema_slow, ema_fast, ema_fast > ema_slow)
+                    best = (i, j, b - 100., b, x, t, ema_slow, ema_fast, ema_fast > ema_slow)
         print('i%d/j%d, %.3f%% C1:%.4f C2:%.4f #%d slow=%.6f fast=%.6f %r' % best)
     else:
-        print(trade(times, totals, amounts, rates, 0.008000, 0.036000))
+#        print(trade(times, totals, amounts, rates, 0.008000, 0.036000))
+        #        print(trade(times, totals, amounts, rates, 0.001000, 0.036000))
+        print(trade(times, totals, amounts, rates, 0.00100, 0.00200))
 
 def main():
-    with utils.qtapp() as app:
-        try_market('BTC_ETC')
+    with utils.qtapp(True) as app:
+        if False:
+            for f in os.listdir('..'):
+                if not (f.startswith('trade_history') and f.endswith('.json')):
+                    continue
+                m = f.split('.')[0].split('-')[1]
+                try_market(m)
+        else:
+            try_market('BTC_ARDR')
+#            try_market('BTC_ETC')
         app.run()
-    #for f in os.listdir('..'):
-        #if not (f.startswith('trade_history') and f.endswith('.json')):
-            #continue
-        #m = f.split('.')[0].split('-')[1]
-        #try_market(m)
 
 if __name__ == '__main__':
     main()
