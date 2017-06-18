@@ -14,6 +14,7 @@ import logging as log
 from PyQt4 import QtGui, QtCore, Qt, uic
 import qwt
 
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 import trader
 
 
@@ -70,17 +71,18 @@ class GraphUI(QtGui.QWidget):
 
 #        [print('%.2f, %11.8f, %11.8f, %9.9f' % d) for d in full]
 
-        rates_vema_slow = trader.vema(totals, amounts, 0.001)
-        rates_vema_fast = trader.vema(totals, amounts, 0.004)
+        #rates_vema_slow = trader.vema(totals, amounts, 0.001)
+        #rates_vema_fast = trader.vema(totals, amounts, 0.004)
 
         candlestick_data = self.th.rate_buckets()
         times2 = [e['time'] - now for e in candlestick_data]
-        rates2 = [e['total_sell'] / e['amount_sell'] for e in candlestick_data]
-        amounts2 = [e['amount_sell'] for e in candlestick_data]
-        totals2 = [e['total_sell'] for e in candlestick_data]
+        rates_sell = [e['total_sell'] / e['amount_sell'] for e in candlestick_data]
+        rates_buy = [e['total_buy'] / e['amount_buy'] for e in candlestick_data]
+        amounts_sell = [e['amount_sell'] for e in candlestick_data]
+        totals_sell = [e['total_sell'] for e in candlestick_data]
 
-        rates_vema_fast = trader.vema(totals2, amounts2, 0.1)
-        rates_vema_slow = trader.vema(totals2, amounts2, 0.1)
+        rates_vema_fast = trader.vema(totals_sell, amounts_sell, 0.1)
+        rates_vema_slow = trader.vema(totals_sell, amounts_sell, 0.1)
 
 
         plot = DataPlot()
@@ -89,9 +91,10 @@ class GraphUI(QtGui.QWidget):
 
         plot.set_data(times, rates, Qt.QPen(Qt.Qt.gray, 1, Qt.Qt.SolidLine))
 
-        plot.set_data(times2, rates2, Qt.QPen(Qt.Qt.black, 2, Qt.Qt.SolidLine))
-        plot.set_data(times2, rates_vema_fast, Qt.QPen(Qt.Qt.red, 2, Qt.Qt.SolidLine))
-        plot.set_data(times2, rates_vema_slow, Qt.QPen(Qt.Qt.blue, 2, Qt.Qt.SolidLine))
+        plot.set_data(times2, rates_sell, Qt.QPen(Qt.Qt.blue, 2, Qt.Qt.SolidLine))
+        plot.set_data(times2, rates_buy, Qt.QPen(Qt.Qt.red, 2, Qt.Qt.SolidLine))
+        #plot.set_data(times2, rates_vema_fast, Qt.QPen(Qt.Qt.red, 2, Qt.Qt.SolidLine))
+        #plot.set_data(times2, rates_vema_slow, Qt.QPen(Qt.Qt.blue, 2, Qt.Qt.SolidLine))
 
         m = max(rates)
 #        plot.set_y_scale(0.8 * m, m)

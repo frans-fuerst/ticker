@@ -5,6 +5,7 @@ trading experiment
 ToDo
 ====
 
+- [ ] TradingHistory: fill large gaps
 - [ ] sanatize 'check' (faster, better rate)
 - [ ] orders / balances on thread
 - [ ] persist orders / balances

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
 import os, sys
-import time
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+import time
 import trader
 import utils
 
@@ -38,7 +38,7 @@ def trade(times, totals, amounts, rates, alpha_ema_slow, alpha_ema_fast):
         w.show()
     else:
         w = None
-
+    #return
     trades = 0
     last_C1 = 0
     last_C2 = 0
@@ -59,7 +59,7 @@ def trade(times, totals, amounts, rates, alpha_ema_slow, alpha_ema_fast):
             new_c1 = amount_C2 * d * fee
             amount_C1 = new_c1
             last_C2, amount_C2 = amount_C2, 0.
-        if True and w:
+        if False and w:
             w.add_vmarker(times[i], 'red' if action == 'sell' else 'green')
             w.add_hmarker(d, 'red' if action == 'sell' else 'green')
         trades += 1
@@ -80,10 +80,10 @@ def try_market(m):
                 break
             except trader.ServerError:
                 pass
-#        th.save()
+        th.save()
 
     now = time.time()
-    cdata = [trader.expand_bucket(b) for b in th.rate_buckets(60)] #[-500:]
+    cdata = [trader.expand_bucket(b) for b in th.rate_buckets(5 * 60)] #[-500:]
     times = [(e['time'] - now) / 3600 for e in cdata]
     rates = [e['rate'] for e in cdata]
     amounts = [e['amount_sell'] for e in cdata]
@@ -109,7 +109,7 @@ def try_market(m):
     else:
 #        print(trade(times, totals, amounts, rates, 0.008000, 0.036000))
         #        print(trade(times, totals, amounts, rates, 0.001000, 0.036000))
-        print(trade(times, totals, amounts, rates, 0.00100, 0.00200))
+        print(trade(times, totals, amounts, rates, 0.0150, 0.0250))
 
 def main():
     with utils.qtapp(True) as app:
