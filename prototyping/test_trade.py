@@ -3,10 +3,10 @@
 import os, sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 import mftl
+import mftl.px
+import mftl.qwtgraph
 
 import time
-#import trader
-import utils
 
 fee = 0.9975
 
@@ -29,11 +29,11 @@ def trade(times, totals, amounts, rates, alpha_ema_slow, alpha_ema_fast):
     amount_C1 = 100.
     amount_C2 = 0.
 
-    ma_slow = trader.vema(totals, amounts, alpha_ema_slow)
-    ma_fast = trader.vema(totals, amounts, alpha_ema_fast)
+    ma_slow = mftl.vema(totals, amounts, alpha_ema_slow)
+    ma_fast = mftl.vema(totals, amounts, alpha_ema_fast)
 
     if True:
-        w = utils.GraphUI()
+        w = mftl.qwtgraph.GraphUI()
         w.set_data(times, rates)
         w.set_data(times, ma_slow, 'fat_blue')
         w.set_data(times, ma_fast, 'fat_red')
@@ -80,12 +80,12 @@ def try_market(m):
             try:
                 th.fetch_next(-1)
                 break
-            except trader.ServerError:
+            except mftl.util.ServerError:
                 pass
         th.save()
 
     now = time.time()
-    cdata = [trader.expand_bucket(b) for b in th.rate_buckets(5 * 60)] #[-500:]
+    cdata = [mftl.expand_bucket(b) for b in th.rate_buckets(5 * 60)] #[-500:]
     times = [(e['time'] - now) / 3600 for e in cdata]
     rates = [e['rate'] for e in cdata]
     amounts = [e['amount_sell'] for e in cdata]
@@ -113,8 +113,9 @@ def try_market(m):
         #        print(trade(times, totals, amounts, rates, 0.001000, 0.036000))
         print(trade(times, totals, amounts, rates, 0.0150, 0.0250))
 
+
 def main():
-    with utils.qtapp(True) as app:
+    with mftl.qwtgraph.qtapp() as app:
         if False:
             for f in os.listdir('..'):
                 if not (f.startswith('trade_history') and f.endswith('.json')):
@@ -125,6 +126,7 @@ def main():
             try_market('BTC_ARDR')
 #            try_market('BTC_ETC')
         app.run()
+
 
 if __name__ == '__main__':
     main()

@@ -22,15 +22,6 @@ def merge_time_list(list1, list2):
     return list2
 
 
-def expand_bucket(bucket):
-    amount = bucket['amount_buy'] + bucket['amount_sell']
-    total = bucket['total_buy'] + bucket['total_sell']
-    return {**bucket, **{
-        'amount': amount,
-        'total': total,
-        'rate': total / amount,
-    }}
-
 def get_plot_data(data, ema_factor):
     totals = [e['total'] for e in data]
     amounts = [e['amount'] for e in data]
