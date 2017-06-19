@@ -8,14 +8,16 @@ import argparse
 import threading
 import queue
 import time
-import json
 import traceback
 import logging as log
 from PyQt4 import QtGui, QtCore, Qt, uic
 import qwt
 from enum import IntEnum
 
-import trader
+import mftl
+import mftl.util
+import mftl.px
+from mftl.util import json_mod
 
 def toggle_profiling(clock_type='wall') -> None:
     # https://code.google.com/archive/p/yappi/wikis/usageyappi.wiki
@@ -153,7 +155,7 @@ class MarketWidget(QtGui.QWidget):
 
     def threadsafe_update_plot(self):
         log.info('update market trades for %r', self._trade_history.name())
-        if not self._trade_history.fetch_next():
+        if not self._trade_history.fetch_next(api=self._trader_api):
             return
         times, rates = self._trade_history.get_plot_data(0.005)
         if not times:
@@ -239,14 +241,12 @@ class Trader(QtGui.QMainWindow):
         uic.loadUi(os.path.join(self._directory, 'trader.ui'), self)
         self._config = self._load_config('config')
         if 'proxies' in self._config:
-            trader.set_proxies(self._config['proxies'])
+            mftl.util.set_proxies(self._config['proxies'])
 
         self._trader_api = self._get_trader()
-        self._data = trader.TraderData()
+        self._data = mftl.TraderData()
         self._balances_dirty = True
         self._markets = {}
-        self._available_markets = None
-        self._available_coins = None
 
         self._update_timer = QtCore.QTimer(self)
         self._update_timer.timeout.connect(self._update_timer_timeout)
@@ -301,7 +301,7 @@ class Trader(QtGui.QMainWindow):
             log.warning("task not done yet - I'll come back later")
             return
 
-        if not self._available_markets:
+        if not self._data.available_markets():
             # todo: update
             self._put_task(self._threadsafe_fetch_markets, Priorities.Init)
 
@@ -335,7 +335,7 @@ class Trader(QtGui.QMainWindow):
 
     def _get_trader(self):
         try:
-            return trader.Api(**ast.literal_eval(open('k').read()))
+            return mftl.px.PxApi(**ast.literal_eval(open('k').read()))
         except FileNotFoundError:
             log.warning('did not find key file - only public access is possible')
             return None
@@ -369,7 +369,7 @@ class Trader(QtGui.QMainWindow):
 
     def _worker_thread_fn(self):
         def multiple_try(fn, times):
-            for i in range(times):
+            for _ in range(times):
                 try:
                     fn()
                     return
@@ -471,11 +471,11 @@ class Trader(QtGui.QMainWindow):
         def save_order(order):
             if not order: return
             try:
-                orders = json.loads(open('orders').read())
+                orders = json_mod.loads(open('orders').read())
             except FileNotFoundError:
                 orders = []
             orders.append(order)
-            open('orders', 'w').write(json.dumps(orders))
+            open('orders', 'w').write(json_mod.dumps(orders))
 
         save_order(order_result)
         self._balances_dirty = True
@@ -498,16 +498,13 @@ class Trader(QtGui.QMainWindow):
 
     def _threadsafe_fetch_markets(self):
         log.info('fetch ticker info..')
-        self._data.update_available_markets(trader.Api)
+        self._data.update_available_markets(mftl.px.PxApi)
 
-        ticker = trader.Api.get_ticker()
-        coins = trader.Api.extract_coin_data(ticker)
-        markets = set(ticker.keys())
+        # ticker = mftl.px.PxApi.get_ticker()
+        # coins = mftl.px.PxApi.extract_coin_data(ticker)
+        # markets = set(ticker.keys())
         QtCore.QMetaObject.invokeMethod(
-            self, "_handle_markets", QtCore.Qt.QueuedConnection,
-            QtCore.Q_ARG(dict, coins),
-            QtCore.Q_ARG(set, markets),
-        )
+            self, "_handle_markets", QtCore.Qt.QueuedConnection)
 
     def _set_cb_items(self, combo_box, items):
         old_items = set(combo_box.itemText(i) for i in range(combo_box.count()))
@@ -516,27 +513,24 @@ class Trader(QtGui.QMainWindow):
         for c in sorted(items):
             combo_box.addItem(c)
 
-    @QtCore.pyqtSlot(dict, set)
-    def _handle_markets(self, coins, markets):
-        self._available_markets = markets
-        self._available_coins = coins
-
+    @QtCore.pyqtSlot()
+    def _handle_markets(self):
         self._set_cb_items(self.cb_trade_curr_buy,
-                           {'BTC'} | self._available_coins['BTC'])
+                           {'BTC'} | self._data.available_coins()['BTC'])
 
         try:
-            last_markets = set(json.loads(open('last_markets').read()))
+            last_markets = set(json_mod.loads(open('last_markets').read()))
         except FileNotFoundError:
             last_markets = set()
-        if self._available_markets - last_markets:
+        if self._data.available_markets() - last_markets:
             if QtGui.QMessageBox.question(
                     self, 'New Markets!!!11!!',
                     "Be sure to buy coins of %r\n\nSave markets?" % (
-                        self._available_markets - last_markets),
+                        self._data.available_markets() - last_markets),
                     QtGui.QMessageBox.Ok, QtGui.QMessageBox.No
                     ) == QtGui.QMessageBox.Ok:
                 open('last_markets', 'w').write(
-                    json.dumps(list(self._available_markets)))
+                    json_mod.dumps(list(self._data.available_markets())))
 
     def _threadsafe_fetch_balances(self):
         if not self._trader_api: return
@@ -717,7 +711,7 @@ def main():
     log.addLevelName(log.DEBUG,    '(DD)')
     log.addLevelName(log.NOTSET,   '(NA)')
 
-    trader.ALLOW_CACHED_VALUES = 'ALLOW' if args.allow_cached else 'NEVER'
+    mftl.util.ALLOW_CACHED_VALUES = 'ALLOW' if args.allow_cached else 'NEVER'
 
     log.info('or run `kill -10 %d` to show stack trace', os.getpid())
     signal.signal(signal.SIGUSR1, handle_sigusr1)
