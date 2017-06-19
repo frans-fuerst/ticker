@@ -2,8 +2,10 @@
 
 import os, sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+import mftl
+
 import time
-import trader
+#import trader
 import utils
 
 fee = 0.9975
@@ -69,7 +71,7 @@ def trade(times, totals, amounts, rates, alpha_ema_slow, alpha_ema_fast):
 
 def try_market(m):
     print(m)
-    th = trader.TradeHistory(m)  # 0.0008 / 0.004
+    th = mftl.TradeHistory(m)  # 0.0008 / 0.004
     th.load()
 
     if th.get_duration() < 10 * 3600:
