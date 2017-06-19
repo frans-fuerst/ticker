@@ -8,21 +8,7 @@ import mftl.qwtgraph
 
 import time
 
-fee = 0.9975
-
-def random_trade(th):
-    amount_BTC = 100.
-    amount_XMR = 0.
-    for i, d in enumerate(th.data()):
-        if i % 100 == 0:
-            action = 'buy' if i // 100 % 2 == 0 else 'sell'
-            if action == 'buy':
-                amount_XMR = amount_BTC / d['rate'] * fee
-                amount_BTC = 0.
-            elif action == 'sell':
-                amount_BTC = amount_XMR * d['rate'] * fee
-                amount_XMR = 0.
-            print(i, action, amount_BTC, amount_XMR)
+FEE = 0.9975
 
 
 def trade(times, totals, amounts, rates, alpha_ema_slow, alpha_ema_fast):
@@ -53,12 +39,12 @@ def trade(times, totals, amounts, rates, alpha_ema_slow, alpha_ema_fast):
         if action == 'none': continue
         if action == 'buy':
             if amount_C1 == 0.: continue
-            new_c2 = amount_C1 / d * fee
+            new_c2 = amount_C1 / d * FEE
             amount_C2 = new_c2
             last_C1, amount_C1 = amount_C1, 0.
         elif action == 'sell':
             if amount_C2 == 0.: continue
-            new_c1 = amount_C2 * d * fee
+            new_c1 = amount_C2 * d * FEE
             amount_C1 = new_c1
             last_C2, amount_C2 = amount_C2, 0.
         if False and w:
@@ -74,14 +60,13 @@ def try_market(m):
     th = mftl.TradeHistory(m)  # 0.0008 / 0.004
     th.load()
 
-    if th.get_duration() < 10 * 3600:
+    while th.get_duration() < 100 * 3600:
         print('fetch..')
-        for i in range(3):
-            try:
-                th.fetch_next(-1)
-                break
-            except mftl.util.ServerError:
-                pass
+        try:
+            th.fetch_next(api=mftl.px.PxApi, max_duration=-1)
+            break
+        except mftl.util.ServerError:
+            pass
         th.save()
 
     now = time.time()
