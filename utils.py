@@ -1,115 +1,51 @@
 #!/usr/bin/env python3
 
-import sys
-import signal
-import logging as log
-from PyQt4 import QtGui, QtCore, Qt
-import qwt
-
-GLOBAL = []
-
-def easypen(pen):
-    try:
-        return {
-            'blue': Qt.QPen(Qt.Qt.blue, 1, Qt.Qt.SolidLine),
-            'red': Qt.QPen(Qt.Qt.red, 1, Qt.Qt.SolidLine),
-            'green': Qt.QPen(Qt.Qt.green, 1, Qt.Qt.SolidLine),
-            'fat_blue': Qt.QPen(Qt.Qt.blue, 2, Qt.Qt.SolidLine),
-            'fat_red': Qt.QPen(Qt.Qt.red, 2, Qt.Qt.SolidLine),
-            'fat_green': Qt.QPen(Qt.Qt.green, 2, Qt.Qt.SolidLine),
-            None: Qt.QPen(Qt.Qt.black, 1, Qt.Qt.SolidLine),
-            }[pen]
-    except:
-        return Qt.QPen(Qt.Qt.black, 1, Qt.Qt.SolidLine)
-
-class DataPlot(qwt.QwtPlot):
-
-    def __init__(self, *args):
-        qwt.QwtPlot.__init__(self, *args)
-
-        self.enableAxis(qwt.QwtPlot.xBottom, True)
-        self.enableAxis(qwt.QwtPlot.yLeft, True)
-        self.axisWidget(qwt.QwtPlot.yLeft).scaleDraw().setMinimumExtent(100)
-
-    def set_data(self, datax, datay, pen):
-        curve = qwt.QwtPlotCurve("Curve 1")
-        curve.setData(datax, datay)
-        curve.setPen(pen)
-        curve.attach(self)
-
-    def set_y_scale(self, smin, smax):
-        self.setAxisScale(qwt.QwtPlot.yLeft, smin, smax)
-
-    def add_vmarker(self, pos, pen):
-        marker = qwt.QwtPlotMarker()
-    #        marker.setLabelAlignment(Qt.Qt.AlignRight | Qt.Qt.AlignTop)
-        marker.setLineStyle(qwt.QwtPlotMarker.VLine)
-        marker.setLinePen(pen)
-        marker.setXValue(pos)
-        marker.attach(self)
-
-    def add_hmarker(self, pos, pen):
-        marker = qwt.QwtPlotMarker()
-    #        marker.setLabelAlignment(Qt.Qt.AlignRight | Qt.Qt.AlignTop)
-        marker.setLineStyle(qwt.QwtPlotMarker.HLine)
-        marker.setLinePen(pen)
-        marker.setYValue(pos)
-        marker.attach(self)
-
-    def redraw(self):
-        self.replot()
+import time
 
 
-class GraphUI(QtGui.QWidget):
+def toggle_profiling(clock_type='wall') -> None:
+    # https://code.google.com/archive/p/yappi/wikis/usageyappi.wiki
+    # https://code.google.com/archive/p/yappi/wikis/UsageYappi_v092.wiki
+    import yappi
+    if not yappi.is_running():
+        yappi.set_clock_type(clock_type)
+        yappi.start(builtins=False)
+        yappi.profile_begin_time = yappi.get_clock_time()
+        yappi.profile_begin_wall_time = time.time()
+        log.info(
+            'now capturing profiling info of with clock_type=%r',
+            yappi.get_clock_type())
+    else:
+        log.info('stop capturing and output statistics on stdout')
+        yappi.stop()
+        func_stats = yappi.get_func_stats()
+        thread_stats = yappi.get_thread_stats()
+        time_yappi = yappi.get_clock_time()
+        duration_yappi = time_yappi - yappi.profile_begin_time
+        time_wall = time.time()
+        duration_wall = time_wall - yappi.profile_begin_wall_time
 
-    def __init__(self):
-        super().__init__()
-        self.setLayout(QtGui.QVBoxLayout())
+        yappi.clear_stats()
 
-        self.plot = DataPlot()
-        self.layout().addWidget(self.plot)
-        self.setGeometry(200, 200, 1100, 650)
+        print('Profiling time: %s - %s = %.1fs\n' % (
+            time.asctime(time.localtime(yappi.profile_begin_wall_time)),
+            time.asctime(time.localtime(time_wall)),
+            duration_wall,
+        ))
+        print('yappi duration: %.1fs\n' % duration_yappi)
 
-        GLOBAL.append(self)
-        #self.plot.redraw()
-        #self.show()
-
-    def set_data(self, xdata, ydata, pen=None):
-        self.plot.set_data(xdata, ydata, easypen(pen))
-        self.plot.redraw()
-
-    def add_vmarker(self, pos, pen=None):
-        self.plot.add_vmarker(pos, easypen(pen))
-
-    def add_hmarker(self, pos, pen=None):
-        self.plot.add_hmarker(pos, easypen(pen))
-
-
-class qtapp:
-    def __init__(self, active=True):
-        self._active = active
-
-    def __enter__(self, *args):
-        if self._active:
-            self.app = QtGui.QApplication(sys.argv)
-            signal.signal(signal.SIGINT, signal.SIG_DFL)
-        return self
-
-    def __exit__(self, *args):
-        pass
-
-    def run(self):
-        return self.app.exec_() if GLOBAL else None
-
-
-
-def main():
-    log.basicConfig(level=log.INFO)
-    with qtapp() as app:
-        w = GraphUI()
-        w.show()
-        app.run()
-
-if __name__ == '__main__':
-    main()
+        func_stats.print_all(
+            #out=out,
+            columns={0: ("name",  40),
+                     1: ("ncall",  5),
+                     2: ("tsub",   8),
+                     3: ("ttot",   8),
+                     4: ("tavg",   8)})
+        thread_stats.print_all(
+            #out=out,
+            columns={0: ("name", 23),
+                     1: ("id",    5),
+                     2: ("tid",  15),
+                     3: ("ttot",  8),
+                     4: ("scnt", 10)})
 
