@@ -237,7 +237,7 @@ class Trader(QtGui.QMainWindow):
         # sort by time
         self.tbl_order_history.sortItems(0, QtCore.Qt.DescendingOrder)
         # sort by EUR value
-        self.tbl_balances.sortItems(4, QtCore.Qt.DescendingOrder)
+        self.tbl_balances.sortItems(6, QtCore.Qt.DescendingOrder)
         self.tbl_open_orders.sortItems(2, QtCore.Qt.DescendingOrder)
         self.le_suggested_rate_factor.setText(str(self._config['suggested_rate_factor']))
 
@@ -532,11 +532,14 @@ class Trader(QtGui.QMainWindow):
             _add_eur = _add_btc * xbt_usd_rate * self._data.eur_price()
             btc_total += _add_btc
             eur_total += _add_eur
+            self._data.get_asset_cost(c)
             self.tbl_balances.setItem(i, 0, QtGui.QTableWidgetItem('%s' % c))
             self.tbl_balances.setItem(i, 1, QtGui.QTableWidgetItem('%10.5f' % a))
-            self.tbl_balances.setItem(i, 2, QtGui.QTableWidgetItem('%13.8f' % _btc_rate))
-            self.tbl_balances.setItem(i, 3, QtGui.QTableWidgetItem('%10.5f' % _add_btc))
-            self.tbl_balances.setItem(i, 4, QtGui.QTableWidgetItem('%10.5f' % _add_eur))
+            self.tbl_balances.setItem(i, 1, QtGui.QTableWidgetItem('%10.5f' % a))
+
+            self.tbl_balances.setItem(i, 4, QtGui.QTableWidgetItem('%13.8f' % _btc_rate))
+            self.tbl_balances.setItem(i, 5, QtGui.QTableWidgetItem('%10.5f' % _add_btc))
+            self.tbl_balances.setItem(i, 6, QtGui.QTableWidgetItem('%10.5f' % _add_eur))
             i += 1
         self.tbl_balances.setSortingEnabled(True)
 

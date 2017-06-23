@@ -306,6 +306,16 @@
         </column>
         <column>
          <property name="text">
+          <string>cost</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>gain</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
           <string>BTC rate</string>
          </property>
         </column>
