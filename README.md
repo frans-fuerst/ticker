@@ -5,21 +5,15 @@ trading experiment
 ToDo
 ====
 
-- [ ] TradingHistory: fill large gaps
-- [ ] sanatize 'check' (faster, better rate)
-- [ ] orders / balances on thread
-- [ ] persist orders / balances
 - [ ] sync history updates
 - [ ] highlight items with balances
 - [ ] only suggest buyable items
 - [ ] buy: check order book first
 - [ ] buy: disable controls on change and permanently
-
-- [ ] write balance history
-- [ ] filter trading target
-- [ ] track order / trades
 - [ ] edit graph parameters
 
+- [x] sanatize 'check' (faster, better rate)
+- [x] orders / balances on thread
 - [x] write trade history
 - [x] remove BTC from list
 - [x] sort only on signal
