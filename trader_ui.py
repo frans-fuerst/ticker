@@ -542,10 +542,12 @@ class Trader(QtGui.QMainWindow):
             _add_eur = _add_btc * self._data.btc_eur_price()
             btc_total += _add_btc
             eur_total += _add_eur
-            self._data.get_asset_cost(c)
+            cost = self._data.get_asset_cost(c)
+            gain = 100 * (_add_btc / cost - 1)
             self.tbl_balances.setItem(i, 0, QtGui.QTableWidgetItem('%s' % c))
             self.tbl_balances.setItem(i, 1, QtGui.QTableWidgetItem('%10.5f' % a))
-            self.tbl_balances.setItem(i, 1, QtGui.QTableWidgetItem('%10.5f' % a))
+            self.tbl_balances.setItem(i, 2, QtGui.QTableWidgetItem('%10.5f' % cost))
+            self.tbl_balances.setItem(i, 3, QtGui.QTableWidgetItem('%10.1f%%' % gain))
 
             self.tbl_balances.setItem(i, 4, QtGui.QTableWidgetItem('%13.8f' % _btc_rate))
             self.tbl_balances.setItem(i, 5, QtGui.QTableWidgetItem('%10.5f' % _add_btc))
