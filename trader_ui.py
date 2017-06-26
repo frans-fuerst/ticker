@@ -43,7 +43,6 @@ class DataPlot(qwt.QwtPlot):
         self.enableAxis(qwt.QwtPlot.yLeft, True)
         # self.setAxisTitle(qwt.QwtPlot.xBottom, "Time (seconds)")
         # self.setAxisTitle(qwt.QwtPlot.yLeft, "Values")
-        self.setCanvasBackground(Qt.Qt.green)
 
         self.redraw()
 
@@ -79,6 +78,7 @@ class MarketWidgetItem(QtGui.QListWidgetItem):
         list_widget.addItem(self)
         list_widget.setItemWidget(self, market_widget)
         self.setFlags(QtCore.Qt.ItemIsEnabled)
+        self._market_widget.set_list_item(self)
 
     def __lt__(self, other):
         return (self._market_widget.trend() < other._market_widget.trend()
@@ -87,6 +87,9 @@ class MarketWidgetItem(QtGui.QListWidgetItem):
 
     def set_height(self, height):
         self.setSizeHint(QtCore.QSize(110, height))
+
+    def set_color(self, color):
+        self.setBackground(QtGui.QBrush(color, QtCore.Qt.SolidPattern))
 
 
 class MarketWidget(QtGui.QWidget):
@@ -99,6 +102,7 @@ class MarketWidget(QtGui.QWidget):
 
         self._trade_history = trade_history
         self._trader_api = api
+        self._list_item = None
 
         self._current_vema_rate = 0.
         self._current_trend = 0.
@@ -156,6 +160,14 @@ class MarketWidget(QtGui.QWidget):
 
     def shutdown(self):
         self._trade_history.save()
+
+    def set_list_item(self, item):
+        # workaround! see https://stackoverflow.com/questions/44668016
+        self._list_item = item
+
+    def set_color(self, color):
+        if not self._list_item: return
+        self._list_item.set_color(color)
 
 
 class Priorities(IntEnum):
@@ -272,9 +284,6 @@ class Trader(QtGui.QMainWindow):
         for _, w in self._markets.items():
             self._put_task(w.threadsafe_update_plot, Priorities.Low)
 
-        # todo
-        self._put_task(self._threadsafe_display_balances, 1)
-
     def _load_config(self, filename):
         result = {'graph_height':   140,
                   'history_length_h': 4,
@@ -319,7 +328,6 @@ class Trader(QtGui.QMainWindow):
     def _persist(self):
         for _, m in self._markets.items():
             m.shutdown()
-
 
     def _put_task(self, fn, priority, retry=True):
         self._tasks.put(Trader.Task(fn, priority, retry))
@@ -435,8 +443,9 @@ class Trader(QtGui.QMainWindow):
             open('orders', 'w').write(json_mod.dumps(orders))
 
         save_order(order_result)
+        self._put_task(self._threadsafe_fetch_orders, Priorities.Critical)
+        self._put_task(self._threadsafe_fetch_balances, Priorities.Critical)
         self._balances_dirty = True
-        # self._put_task(self._threadsafe_fetch_balances, 1)
 
     def _le_trade_amount_textChanged(self):
         self.pb_place_order.setEnabled(False)
@@ -456,6 +465,7 @@ class Trader(QtGui.QMainWindow):
     def _threadsafe_fetch_markets(self):
         log.info('fetch ticker info..')
         self._data.update_available_markets(mftl.px.PxApi)
+        #self._data.update_btc_usd_rate()
 
         # ticker = mftl.px.PxApi.get_ticker()
         # coins = mftl.px.PxApi.extract_coin_data(ticker)
@@ -492,22 +502,18 @@ class Trader(QtGui.QMainWindow):
     def _threadsafe_fetch_balances(self):
         if not self._trader_api: return
         log.info("update balances..")
+        self._data.update_btc_usd_rate()
         self._data.update_balances(self._trader_api)
-        self._data.update_eur()
         QtCore.QMetaObject.invokeMethod(
             self, "_handle_balance_data", QtCore.Qt.QueuedConnection)
 
     @QtCore.pyqtSlot()
     def _handle_balance_data(self):
-        self._display_balances()
+        self._market_data_updated()
 
-    def _threadsafe_display_balances(self):
-        QtCore.QMetaObject.invokeMethod(
-            self, "_display_balances", QtCore.Qt.QueuedConnection)
-
-    @QtCore.pyqtSlot()
     def _display_balances(self):
         if not self._data.balances(): return
+        log.info('display balances')
 
         for m in self._data.balances():
             if m == 'BTC': continue
@@ -518,18 +524,22 @@ class Trader(QtGui.QMainWindow):
         self.tbl_balances.setSortingEnabled(False)
         self.tbl_balances.setRowCount(len(self._data.balances()))
 
-        xbt_usd_rate = self._markets['USDT_BTC'].current_rate()
+        xbt_usd_rate = self._data.btc_usd_price()
         btc_total = 0.
         eur_total = 0.
         i = 0
         for c, a in self._data.balances().items():
-            _m = 'BTC_%s' % c
+            market = 'BTC_%s' % c
+            try:
+                self._markets[market].set_color(Qt.Qt.lightGray)
+            except KeyError:
+                pass
             _btc_rate = (
                 1. if c == 'BTC' else
-                self._markets[_m].current_rate() if _m in self._markets else
+                self._markets[market].current_rate() if market in self._markets else
                 0.)
             _add_btc = a * _btc_rate
-            _add_eur = _add_btc * xbt_usd_rate * self._data.eur_price()
+            _add_eur = _add_btc * self._data.btc_eur_price()
             btc_total += _add_btc
             eur_total += _add_eur
             self._data.get_asset_cost(c)
@@ -543,17 +553,14 @@ class Trader(QtGui.QMainWindow):
             i += 1
         self.tbl_balances.setSortingEnabled(True)
 
-        if not 'USDT_BTC' in self._markets: return
-
         self.lbl_XBT_USD.setText('%.2f' % xbt_usd_rate)
-        self.lbl_XBT_EUR.setText('%.2f' % (xbt_usd_rate * self._data.eur_price()))
-        self.lbl_bal_BTC.setText('%.4f' % (btc_total))
-        self.lbl_bal_EUR.setText('%.4f' % (eur_total))
+        self.lbl_XBT_EUR.setText('%.2f' % self._data.btc_eur_price())
+        self.lbl_bal_BTC.setText('%.4f' % btc_total)
+        self.lbl_bal_EUR.setText('%.4f' % eur_total)
 
     def _threadsafe_fetch_orders(self):
         if not self._trader_api: return
-        log.info("update own orders..")
-
+        log.info('update trades/open orders')
         self._data.update_trade_history(self._trader_api)
         self._data.update_open_orders(self._trader_api)
         QtCore.QMetaObject.invokeMethod(
@@ -561,6 +568,7 @@ class Trader(QtGui.QMainWindow):
 
     @QtCore.pyqtSlot()
     def _handle_order_data(self):
+        log.info('display trades/open orders')
         self._fill_order_table(self.tbl_open_orders, self._data.open_orders(), cancel_button=True)
         self._fill_order_table(self.tbl_order_history, self._data.trade_history())
         for m, history in self._data.trade_history().items():
@@ -611,6 +619,8 @@ class Trader(QtGui.QMainWindow):
     @QtCore.pyqtSlot(dict)
     def _handle_order_canceled(self, result):
         log.info('cancel returned %r', result)
+        self._put_task(self._threadsafe_fetch_orders, Priorities.Critical)
+        self._put_task(self._threadsafe_fetch_balances, Priorities.Critical)
         self._balances_dirty = True
 
     def _add_market(self, market, list_widget):
@@ -618,10 +628,10 @@ class Trader(QtGui.QMainWindow):
         log.info('add market: %r', market)
 
         market_widget = MarketWidget(
-            self._data.create_trade_history(market), self._trader_api)
+            self._data.create_trade_history(market, max_duration=48*3600),
+            self._trader_api)
         market_widget_item = MarketWidgetItem(market_widget, list_widget)
-        market_widget.updated.connect(
-            lambda: list_widget.sortItems(QtCore.Qt.DescendingOrder))
+        market_widget.updated.connect(self._market_data_updated)
         market_widget_item.set_height(self._config['graph_height'])
 
         market_widget._history_length = self._config['history_length_h'] * 3600
@@ -629,6 +639,9 @@ class Trader(QtGui.QMainWindow):
         list_widget.setMaximumHeight(
             list_widget.count() * (5 + self._config['graph_height']))
 
+    def _market_data_updated(self):
+        self._display_balances()
+        self.lst_markets.sortItems(QtCore.Qt.DescendingOrder)
 
 def show_gui():
     app = QtGui.QApplication(sys.argv)
